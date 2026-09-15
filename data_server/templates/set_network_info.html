@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>Server 設定</title>
+</head>
+<body>
+
+<h1>Server 設定</h1>
+
+<form method="POST">
+    <div>
+        <label for="ssid">SSID：</label>
+        <input
+            type="text"
+            id="ssid"
+            name="ssid"
+            value="{{ network_info.ssid }}"
+            required
+        >
+    </div>
+
+    <div>
+        <label for="password">Password：</label>
+        <input
+            type="text"
+            id="password"
+            name="password"
+            value="{{ network_info.password }}"
+            required
+        >
+    </div>
+
+    <div>
+        <label for="ip">IP：</label>
+        <input
+            type="text"
+            id="ip"
+            name="ip"
+            value="{{ network_info.ip }}"
+            required
+        >
+    </div>
+
+    <div>
+        <label for="port">Port：</label>
+        <input
+            type="number"
+            id="port"
+            name="port"
+            value="{{ network_info.port }}"
+            min="1"
+            max="65535"
+            required
+        >
+    </div>
+
+    <div>
+        <button type="submit">儲存設定</button>
+    </div>
+</form>
+
+</body>
+</html>

@@ -1,17 +1,17 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
-// #include <WiFiClient.h>
+#include <WiFiClient.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include "esp_camera.h"
 
-const char* device_id = "TEST01";
-const char* boot_ssid     = "iPhone-YJL";
-const char* boot_password = "12345678";
-String working_ssid = "";
-String working_password = "";
-String serverUrl = "";
+const char* deviceID = "TEST01";
+const char* bootSSID     = "iPhone-YJL";
+const char* bootPassword = "12345678";
+String workingSSID = "";
+String workingPassword = "";
+String workingServerUrl = "";
 
 const int serverPort = 80;
 const int cameraInitRetry = 10;
@@ -35,23 +35,27 @@ const int cameraInitRetry = 10;
 #define PCLK_GPIO_NUM 13
 
 
-const int httpInterval = 500;
+const int httpInterval = 5000;
 
 void setupCamera();
 void avoidBrownOut(int seconds);
-void initNetwork();
+bool initNetwork();
 String getServerName();
 bool takeAndUploadPhoto();
 
 void setup() {
   Serial.begin(115200);
-  // setupCamera(); // 設定並初始化相機
+  setupCamera(); // 設定並初始化相機
   avoidBrownOut(5); // 等待數秒避免電壓不穩
-  initNetwork(); // 連接 wifi
+  if (!initNetwork()) { // 連接 wifi
+    Serial.println("Failed to initialize network. Restart after 5 seconds.");
+    delay(5000);
+    ESP.restart();
+  }
 }
 
 void loop() {
-  // takeAndUploadPhoto();
+  takeAndUploadPhoto();
   delay(httpInterval);
 }
 
@@ -117,48 +121,55 @@ void avoidBrownOut(int seconds) {
   Serial.println();
 }
 
-void initNetwork() {
+bool initNetwork() {
+  // 先連上 boot wifi，取得 server url 與 working wifi
   WiFi.mode(WIFI_STA);
+  WiFi.disconnect(true); // 清除之前的 wifi 設定
   Serial.print("Connecting to ");
-  Serial.println(boot_ssid);
-  WiFi.begin(boot_ssid, boot_password);  
+  Serial.println(bootSSID);
+  WiFi.begin(bootSSID, bootPassword);  
   while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
+    Serial.println(WiFi.status());
     delay(500);
   }
 
   JsonDocument networkInfo;
-  if (getNetworkInfo(networkInfo)) {
-    String ssid = networkInfo["ssid"] | "";
-    String password = networkInfo["password"] | "";
-    String server_url = networkInfo["server_url"] | "";
-    serverUrl = server_url;
+  if (!getNetworkInfo(networkInfo)) {
+    Serial.println("Failed to get network info");
+    return false;
+  }
 
-    if (!ssid.isEmpty() && !password.isEmpty() && ssid != boot_ssid) {
-      Serial.printf("Switching to working network: %s\n", ssid);
-      WiFi.disconnect();
-      WiFi.begin(ssid, password);
-      while (WiFi.status() != WL_CONNECTED) {
-        Serial.print(".");
-        delay(500);
-      }
+  // 取得 working wifi 與 server url
+  workingSSID = networkInfo["ssid"] | "";
+  workingPassword = networkInfo["password"] | "";
+  workingServerUrl = networkInfo["server_url"] | "";
+
+  // 如果 working wifi 與 boot wifi 不同，切換到 working wifi
+  if (!workingSSID.isEmpty() && !workingPassword.isEmpty() && workingSSID != bootSSID) {
+    Serial.printf("Switching to working network: %s\n", workingSSID);
+    WiFi.disconnect();
+    WiFi.begin(workingSSID, workingPassword);
+    while (WiFi.status() != WL_CONNECTED) {
+      Serial.print(".");
+      delay(500);
     }
   }
 
   Serial.println();
   Serial.print("ESP32-CAM IP Address: ");
   Serial.println(WiFi.localIP());
+  return true;
 }
 
 bool getNetworkInfo(JsonDocument& doc) {
-  String server_url = "https://example.com/get-server-info";
-  WiFiClientSecure client;
-  client.setInsecure();
+  String boot_server_url = "https://demo.goattl.net/get-network-info";
+  WiFiClientSecure boot_client;
+  boot_client.setInsecure();
   HTTPClient http;
 
   Serial.println();
-  Serial.printf("Fetching server info from: %s\n", server_url.c_str());
-  if (!http.begin(client, server_url)) {
+  Serial.printf("Fetching server info from: %s\n", boot_server_url.c_str());
+  if (!http.begin(boot_client, boot_server_url)) {
       Serial.println("HTTP begin failed");
       return false;
   }
@@ -218,10 +229,9 @@ bool takeAndUploadPhoto() {
     // 2. 建立 HTTP Client
     WiFiClient client;
     HTTPClient http;
-    Serial.println("[debug] in takePhoto");
-    Serial.println(serverUrl);
-    String uploadUrl = serverUrl + "/esp32/image-upload";
+    String uploadUrl = workingServerUrl + "/esp32/image-upload";
 
+    Serial.printf("Uploading to: %s\n", uploadUrl.c_str());
     if (!http.begin(client, uploadUrl)) {
         Serial.println("HTTP begin failed");
         esp_camera_fb_return(fb);
@@ -230,7 +240,7 @@ bool takeAndUploadPhoto() {
 
     // 3. 告訴 Server：Body 就是一張 JPEG
     http.addHeader("Content-Type", "image/jpeg");
-    http.addHeader("X-Device-ID", device_id);
+    http.addHeader("X-Device-ID", deviceID);
 
     // 4. 直接把 framebuffer 當 POST body
     unsigned long uploadStart = millis();
