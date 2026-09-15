@@ -1,5 +1,4 @@
 
-#include <WiFiClientSecure.h>
 #include <WiFiClient.h>
 #include <HTTPClient.h>
 #include "cameraSetup.h"
@@ -7,17 +6,8 @@
 
 NetworkConfig networkConfig;
 
-// String workingSSID = "";
-// String workingPassword = "";
-// String workingServerUrl = "";
-
-const int serverPort = 80;
-const int cameraInitRetry = 10;
+const char* deviceID = "TEST01";
 const int httpInterval = 5000;
-
-void avoidBrownOut(int seconds);
-String getServerName();
-bool takeAndUploadPhoto();
 
 void setup() {
   Serial.begin(115200);
@@ -75,7 +65,7 @@ bool takeAndUploadPhoto() {
     // 2. 建立 HTTP Client
     WiFiClient client;
     HTTPClient http;
-    String uploadUrl = workingServerUrl + "/esp32/image-upload";
+    String uploadUrl = networkConfig.server_url + "/esp32/image-upload";
 
     Serial.printf("Uploading to: %s\n", uploadUrl.c_str());
     if (!http.begin(client, uploadUrl)) {

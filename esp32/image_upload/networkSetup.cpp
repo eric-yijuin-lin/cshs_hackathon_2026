@@ -1,4 +1,10 @@
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
 #include "networkSetup.h"
+
+const char* bootSSID     = "iPhone-YJL";
+const char* bootPassword = "12345678";
 
 bool initNetwork(NetworkConfig& config) {
   // 先連上 boot wifi，取得 server url 與 working wifi
@@ -12,22 +18,22 @@ bool initNetwork(NetworkConfig& config) {
     delay(500);
   }
 
-  JsonDocument networkInfo;
-  if (!getNetworkInfo(networkInfo)) {
+  JsonDocument responseJson;
+  if (!fetchConfigFromBootServer(responseJson)) {
     Serial.println("Failed to get network info");
     return false;
   }
 
   // 取得 working wifi 與 server url
-  workingSSID = networkInfo["ssid"] | "";
-  workingPassword = networkInfo["password"] | "";
-  workingServerUrl = networkInfo["server_url"] | "";
+  config.ssid = responseJson["ssid"] | "";
+  config.password = responseJson["password"] | "";
+  config.server_url = responseJson["server_url"] | "";
 
   // 如果 working wifi 與 boot wifi 不同，切換到 working wifi
-  if (!workingSSID.isEmpty() && !workingPassword.isEmpty() && workingSSID != bootSSID) {
-    Serial.printf("Switching to working network: %s\n", workingSSID);
+  if (!config.ssid.isEmpty() && !config.password.isEmpty() && config.ssid != bootSSID) {
+    Serial.printf("Switching to working network: %s\n", config.ssid.c_str());
     WiFi.disconnect();
-    WiFi.begin(workingSSID, workingPassword);
+    WiFi.begin(config.ssid, config.password);
     while (WiFi.status() != WL_CONNECTED) {
       Serial.print(".");
       delay(500);
@@ -40,17 +46,11 @@ bool initNetwork(NetworkConfig& config) {
   return true;
 }
 
-bool getNetworkConfig(NetworkConfig& config) {
-  JsonDocument doc;
-  if (!getNetworkInfo(doc)) {
-    return false;
-  }
-
-  config.ssid = doc["ssid"] | "";
-  config.password = doc["password"] | "";
-  config.server_url = doc["server_url"] | "";
-
-  return true;
+bool fetchConfigFromBootServer(JsonDocument& outJsonDoc) {
+  String boot_server_url = "https://demo.goattl.net/get-network-info";
+  WiFiClientSecure boot_client;
+  boot_client.setInsecure();
+  HTTPClient http;
 
   Serial.println();
   Serial.printf("Fetching server info from: %s\n", boot_server_url.c_str());
@@ -67,7 +67,7 @@ bool getNetworkConfig(NetworkConfig& config) {
 
   if (httpCode > 0) {
       String payload = http.getString();
-      DeserializationError error = deserializeJson(doc, payload);
+      DeserializationError error = deserializeJson(outJsonDoc, payload);
 
       if (error) {
           Serial.print("JSON parse failed: ");

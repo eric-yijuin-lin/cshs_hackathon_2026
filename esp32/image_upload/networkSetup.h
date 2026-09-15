@@ -1,4 +1,3 @@
-#include <WiFi.h>
 #include <ArduinoJson.h>
 
 struct NetworkConfig {
@@ -7,9 +6,6 @@ struct NetworkConfig {
   String server_url;
 };
 
-const char* deviceID = "TEST01";
-const char* bootSSID     = "iPhone-YJL";
-const char* bootPassword = "12345678";
 
 bool initNetwork(NetworkConfig& config);
-bool getNetworkConfig(NetworkConfig& config);
+bool fetchConfigFromBootServer(JsonDocument& outJsonDoc);
