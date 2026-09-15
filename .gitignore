@@ -14,3 +14,4 @@ datasets/*
 best_models/
 yolo_runs/
 *.pt
+*.ipynb
