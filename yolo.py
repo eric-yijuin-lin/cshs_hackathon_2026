@@ -16,15 +16,27 @@
 # # 環境設定
 
 # %% [markdown]
-# ## 確認顯卡 CUDA 可用
+# ## 確認必要套件版本相依
 
 # %%
+import sys
 import torch
+import ultralytics
 
-print("CUDA 可用：", torch.cuda.is_available())
+print("Python executable :", sys.executable)
+print("Python version    :", sys.version)
+
+print("PyTorch version   :", torch.__version__)
+print("PyTorch location  :", torch.__file__)
+
+print("Ultralytics       :", ultralytics.__version__)
+print("Ultralytics path  :", ultralytics.__file__)
+
+print("CUDA available    :", torch.cuda.is_available())
+print("CUDA version      :", torch.version.cuda)
 
 if torch.cuda.is_available():
-    print("GPU：", torch.cuda.get_device_name(0))
+    print("GPU               :", torch.cuda.get_device_name(0))
 
 # %% [markdown]
 # ## 確認資料集路徑正確
@@ -34,14 +46,18 @@ import cv2
 import os
 
 project_root = os.getcwd()
+dataset_name = "輸入 dataset 名稱"
 print("當前工作目錄：", project_root)
-image_path = "./datasets/cat_dog/test/images/cat12_jpeg.rf.8d4c29f2d94b45875358d83db631aa61.jpg"
+image_path = f"./datasets/{dataset_name}/test/images/輸入測試照片名稱"
 image = cv2.imread(image_path)
 
 print(image.shape)
 
 # %% [markdown]
 # # YOLO 訓練
+
+# %% [markdown]
+# ## 開始用資料集訓練
 
 # %%
 from ultralytics import YOLO
@@ -50,7 +66,7 @@ from pathlib import Path
 model = YOLO("yolo26s.pt")
 
 model.train(
-    data="./datasets/cat_dog/data.yaml",
+    data=f"./datasets/{dataset_name}/data.yaml",
     epochs=200,
     imgsz=640,
     project=Path(project_root) / "yolo_runs" / "detect",
@@ -61,11 +77,26 @@ model.train(
 
 
 
-# %%
-model = YOLO(Path(project_root) / "yolo_runs" / "detect" / "cat_dog" / "weights" / "best.pt")
+# %% [markdown]
+# ## 測試模型效能
 
+# %% [markdown]
+# ### 載入 best model
+
+# %%
+from ultralytics import YOLO
+from pathlib import Path
+# model = YOLO(Path(project_root) / "yolo_runs" / "detect" / f"{dataset_name}" / "weights" / "best.pt")
+model = YOLO(Path(project_root) / "best_models" / "sch-pp85c_plate-641xp(20260917).pt")
+
+
+# %% [markdown]
+# ### 指定影像來源並預測
+
+# %%
 results = model.predict(
-    source="./datasets/cat_dog/test/images/cat4_jpg.rf.a70b88e116636419cfa128c938fd1345.jpg",
+    # source=f"./datasets/{dataset_name}/test/images/輸入測試照片名稱",
+    source=f"./datasets/car_2(TW)/test/images/003386_jpg.rf.9112eab8a355143f7ac68818e1ca4a6a.jpg",
     conf=0.25
 )
 
