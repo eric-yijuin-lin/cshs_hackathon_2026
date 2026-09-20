@@ -15,3 +15,6 @@ best_models/
 yolo_runs/
 *.pt
 *.ipynb
+
+# env file
+.env
