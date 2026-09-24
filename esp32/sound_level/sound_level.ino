@@ -34,6 +34,12 @@ public:
 
         return output;
     }
+    
+    void reset()
+    {
+        previousInput = 0;
+        previousOutput = 0;
+    }
 };
 
 
@@ -110,29 +116,18 @@ void loop()
     }
 }
 
-void reset()
-{
-    previousInput = 0;
-    previousOutput = 0;
-}
-
 double calculateRMS(int32_t samples[], int count)
 {
     double sum = 0;
     int validCount = 0;
 
-
     for(int i = 0; i < count; i += 2)
     {
         int32_t sample = convertSample(samples[i]);
-
         float filtered = hp.process(sample);
-
         sum += filtered * filtered;
-
         validCount++;
     }
-
 
     return sqrt(sum / validCount);
 }
@@ -151,3 +146,4 @@ int32_t convertSample(int32_t raw)
 {
     return raw >> 8;
 }
+
