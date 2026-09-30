@@ -6,10 +6,16 @@
 #define I2S_SD   33
 #define SAMPLE_SIZE 1024
 #define SAMPLE_RATE 16000
+#define CALIBRATION_OFFSET 104
 
 const double FULL_SCALE = 8388607.0;
 const double FULL_SCALE_RMS = FULL_SCALE / sqrt(2.0);
 
+struct AudioMetrics
+{
+    double rms;
+    double peak;
+};
 
 class HighPassFilter
 {
@@ -47,8 +53,9 @@ I2SClass I2S;
 unsigned long debug_start = 0;
 int32_t samples[SAMPLE_SIZE];
 
-double calculateRMS(int32_t samples[], int count);
+AudioMetrics calculateMetrics(int32_t samples[], int count);
 double rmsToDbFS(double rms);
+double dbFSToDbSPL(double dbFS);
 int32_t convertSample(int32_t raw);
 
 HighPassFilter hp(
@@ -98,7 +105,7 @@ void loop()
 
     int sampleCount = bytesRead / sizeof(int32_t);
 
-    double rms = calculateRMS(
+    AudioMetrics metrics = calculateMetrics(
         samples,
         sampleCount
     );
@@ -107,18 +114,24 @@ void loop()
     if(millis() - debug_start > 500)
     {
         Serial.print("RMS=");
-        Serial.println(rms);
+        Serial.println(metrics.rms);
+        Serial.print("Peak=");
+        Serial.println(metrics.peak);
 
-        double db = rmsToDbFS(rms);
-        Serial.print("dB=");
-        Serial.println(db);
+        double dbFS = rmsToDbFS(metrics.rms);
+        double dbSPL = dbFSToDbSPL(dbFS);
+        Serial.print("dB FS=");
+        Serial.println(dbFS);
+        Serial.print("dB SPL=");
+        Serial.println(dbSPL);
         debug_start = millis();
     }
 }
 
-double calculateRMS(int32_t samples[], int count)
+AudioMetrics calculateMetrics(int32_t samples[], int count)
 {
     double sum = 0;
+    double peak = 0;
     int validCount = 0;
 
     for(int i = 0; i < count; i += 2)
@@ -126,10 +139,21 @@ double calculateRMS(int32_t samples[], int count)
         int32_t sample = convertSample(samples[i]);
         float filtered = hp.process(sample);
         sum += filtered * filtered;
+
+        double amplitude = fabs(filtered);
+        if(amplitude > peak)
+        {
+            peak = amplitude;
+        }
+
         validCount++;
     }
 
-    return sqrt(sum / validCount);
+    AudioMetrics metrics;
+    metrics.rms = sqrt(sum / validCount);
+    metrics.peak = peak;
+
+    return metrics;
 }
 
 double rmsToDbFS(double rms)
@@ -140,6 +164,11 @@ double rmsToDbFS(double rms)
     }
 
     return 20.0 * log10(rms / FULL_SCALE_RMS);
+}
+
+double dbFSToDbSPL(double dbFS)
+{
+    return dbFS + CALIBRATION_OFFSET;
 }
 
 int32_t convertSample(int32_t raw)
