@@ -1,31 +1,18 @@
-import json
-from openai import OpenAI
-from ai.agent.tools import get_device_status
+from ai.agent.llm_client import LLMClient
 from ai.agent.tool_definitions import TOOLS
+from ai.agent.tool_executor import execute_tool
+from ai.agent.agent import Agent
 
-client = OpenAI()
+llm = LLMClient()
 
-response = client.responses.create(
-    model="gpt-5.5",
-    input="sensor-01 現在的狀態為何？",
-    tools=TOOLS
+agent = Agent(
+    llm_client = llm,
+    tools = TOOLS,
+    tool_executor = execute_tool
 )
 
-for item in response.output:
-    if item.type == "function_call":
-        arguments = json.loads(item.arguments)
-        result = get_device_status(**arguments)
+result = agent.run(
+    "sensor-01 與 sensor-02 現在狀況如何？"
+)
 
-        response = client.responses.create(
-            model="gpt-5.5",
-            previous_response_id=response.id,
-            input=[
-                {
-                    "type": "function_call_output",
-                    "call_id": item.call_id,
-                    "output": json.dumps(result)
-                }
-            ],
-            tools=TOOLS
-        )
-        print(response.output_text)
+print(result)
