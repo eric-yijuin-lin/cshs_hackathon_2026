@@ -8,6 +8,8 @@ NetworkConfig networkConfig;
 
 const char* deviceID = "TEST01";
 const int httpInterval = 5000;
+const int buttonPin = 21;
+bool lastButtonState = HIGH;
 
 void setup() {
   Serial.begin(115200);
@@ -18,11 +20,24 @@ void setup() {
     delay(5000);
     ESP.restart();
   }
+
+  pinMode(buttonPin, INPUT_PULLUP);
 }
 
 void loop() {
-  takeAndUploadPhoto();
-  delay(httpInterval);
+  if (digitalRead(buttonPin) == LOW) {
+    delay(30);
+
+    if (digitalRead(buttonPin) == LOW) {
+      takeAndUploadPhoto();
+
+      while (digitalRead(buttonPin) == LOW) {
+        delay(10);
+      }
+
+      delay(30);
+    }
+  }
 }
 
 
