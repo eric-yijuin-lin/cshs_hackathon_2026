@@ -81,8 +81,8 @@ def image_upload():
         "filename": filename
     })
 
-@app.route("/esp32/image-upload-queue", methods=["POST"])
-def image_upload_queue():
+@app.route("/esp32/image-inference", methods=["POST"])
+def image_inference():
     device_id = request.headers.get("X-Device-ID")
     byte_data = request.get_data()
     print(f"Received image upload from device {device_id}, size: {len(byte_data)} bytes")

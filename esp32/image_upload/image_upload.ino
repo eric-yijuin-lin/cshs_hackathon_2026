@@ -13,13 +13,13 @@ bool lastButtonState = HIGH;
 
 void setup() {
   Serial.begin(115200);
-  initCamera(); // 設定並初始化相機
   avoidBrownOut(5); // 等待數秒避免電壓不穩
   if (!initNetwork("img_inference", networkConfig)) { // 連接 wifi
     Serial.println("Failed to initialize network. Restart after 5 seconds.");
     delay(5000);
     ESP.restart();
   }
+  initCamera(); // 設定並初始化相機
 
   pinMode(buttonPin, INPUT_PULLUP);
 }
