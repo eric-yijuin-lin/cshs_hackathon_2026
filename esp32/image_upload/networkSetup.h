@@ -3,9 +3,9 @@
 struct NetworkConfig {
   String ssid;
   String password;
-  String server_url;
+  String api_urls[5]; // 由各個模組的用途決定，最多 5 個 URL
 };
 
 
-bool initNetwork(NetworkConfig& config);
-bool fetchConfigFromBootServer(JsonDocument& outJsonDoc);
+bool initNetwork(String purpose, NetworkConfig& config);
+bool fetchConfigFromBootServer(String purpose,JsonDocument& outJsonDoc);

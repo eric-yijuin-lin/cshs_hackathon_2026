@@ -6,7 +6,7 @@
 const char* bootSSID     = "iPhone-YJL";
 const char* bootPassword = "12345678";
 
-bool initNetwork(NetworkConfig& config) {
+bool initNetwork(String purpose, NetworkConfig& config) {
   // 先連上 boot wifi，取得 server url 與 working wifi
   WiFi.mode(WIFI_STA);
   WiFi.disconnect(true); // 清除之前的 wifi 設定
@@ -19,15 +19,17 @@ bool initNetwork(NetworkConfig& config) {
   }
 
   JsonDocument responseJson;
-  if (!fetchConfigFromBootServer(responseJson)) {
+  if (!fetchConfigFromBootServer(purpose, responseJson)) {
     Serial.println("Failed to get network info");
     return false;
   }
 
-  // 取得 working wifi 與 server url
-  config.ssid = responseJson["ssid"] | "";
-  config.password = responseJson["password"] | "";
-  config.server_url = responseJson["server_url"] | "";
+  // 取得 working wifi 與 api urls
+  config.ssid = responseJson["ssid"].as<String>();
+  config.password = responseJson["password"].as<String>();
+  for (int i = 0; i < 5; i++) {
+    config.api_urls[i] = responseJson["api_urls"][i].as<String>();
+  }
 
   // 如果 working wifi 與 boot wifi 不同，切換到 working wifi
   if (!config.ssid.isEmpty() && !config.password.isEmpty() && config.ssid != bootSSID) {
@@ -46,8 +48,8 @@ bool initNetwork(NetworkConfig& config) {
   return true;
 }
 
-bool fetchConfigFromBootServer(JsonDocument& outJsonDoc) {
-  String boot_server_url = "https://demo.goattl.net/get-network-info";
+bool fetchConfigFromBootServer(String purpose, JsonDocument& outJsonDoc) {
+  String boot_server_url = "https://demo.goattl.net/get-network-info?purpose=" + purpose;
   WiFiClientSecure boot_client;
   boot_client.setInsecure();
   HTTPClient http;

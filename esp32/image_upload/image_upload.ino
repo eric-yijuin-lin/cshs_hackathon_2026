@@ -13,7 +13,7 @@ void setup() {
   Serial.begin(115200);
   initCamera(); // 設定並初始化相機
   avoidBrownOut(5); // 等待數秒避免電壓不穩
-  if (!initNetwork(networkConfig)) { // 連接 wifi
+  if (!initNetwork("img_inference", networkConfig)) { // 連接 wifi
     Serial.println("Failed to initialize network. Restart after 5 seconds.");
     delay(5000);
     ESP.restart();
@@ -65,7 +65,7 @@ bool takeAndUploadPhoto() {
     // 2. 建立 HTTP Client
     WiFiClient client;
     HTTPClient http;
-    String uploadUrl = networkConfig.server_url + "/esp32/image-upload";
+    String uploadUrl = networkConfig.api_urls[0]; // purpose 為 img_inference，使用 api_urls[0] 作為上傳 URL
 
     Serial.printf("Uploading to: %s\n", uploadUrl.c_str());
     if (!http.begin(client, uploadUrl)) {

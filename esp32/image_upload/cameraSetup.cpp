@@ -32,10 +32,13 @@ void initCamera() {
   // for larger pre-allocated frame buffer.
   if(psramFound()){
     Serial.printf("PARAM found, setting higher quality.");
+    delay(1000);
     config.jpeg_quality = 4;
     config.fb_count = 2;
     config.grab_mode = CAMERA_GRAB_LATEST;
   } else {
+    Serial.printf("PARAM not found, setting default quality.");
+    delay(1000);
     // Limit the frame size when PSRAM is not available
     config.fb_count = 1;
     config.fb_location = CAMERA_FB_IN_DRAM;
