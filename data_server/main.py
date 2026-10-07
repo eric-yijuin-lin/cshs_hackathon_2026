@@ -93,6 +93,18 @@ def image_inference():
     except queue.Full:
         return jsonify({"error": "Image queue is full"}), 400
 
+@app.route("/esp32/plate-debug", methods=["GET"])
+def plate_debug():
+    device_id = request.headers.get("X-Device-ID")
+    byte_data = request.get_data()
+    print(f"Received image upload from device {device_id}, size: {len(byte_data)} bytes")
+
+    try:
+        image_queue.put(byte_data, timeout=1)
+        return jsonify({"message": "Image added to queue"})
+    except queue.Full:
+        return jsonify({"error": "Image queue is full"}), 400
+
 if __name__ == "__main__":
     flask_thread = threading.Thread(
         target=lambda: app.run(

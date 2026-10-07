@@ -1,16 +1,31 @@
 import json
 import math
 from pathlib import Path
+
 import networkx as nx
+
+from plate import CarPlateManager
 
 class RoadTracer:
     def __init__(self):
         self.source_json = {}
         self.dir_table = {}
         self.graph = nx.Graph()
+        self.plate_manager = CarPlateManager()
 
         self.load_source()
         self.init_weighted_graph()
+        
+        self.area_mapping = {
+            'Device-A': 'A',
+            'Device-B': 'B',
+            'Device-C': 'C',
+            'Device-D': 'D',
+            'Device-E': 'E',
+            'Device-F': 'F',
+            'Device-G': 'G',
+            'Device-H': 'H',
+        }
 
     def load_source(self) -> None:
         module_dir = Path(__file__).resolve().parent
@@ -91,3 +106,25 @@ class RoadTracer:
         distance = nx.dijkstra_path_length(self.graph, source=start, target=end)
         print(f"最短路徑: {shortest_path}")
         print(f"{start} 到 {end} 路徑成本 = {distance}")
+
+    def trace_plate(self, device_id: str, yolo_results: list):
+        area = self.area_mapping.get(device_id, None)
+        if not area:
+            raise ValueError(f"找不到對應的區域，device_id = {device_id}")
+
+        ocr_results = self.plate_manager.recognize_plate(yolo_results)
+        for result in ocr_results:
+            plate_number = result["plate_number"]
+            position = result["position"]
+            score = result["score"]
+
+            # 將車牌資訊存入資料庫或其他儲存方式
+            self.plate_manager.upsert_plate({
+                "plate_number": plate_number,
+                "x": position[0],
+                "y": position[1],
+                "area": area,
+                "is_legal": False  # 預設為非法，後續可依需求更新
+            })
+
+            print(f"偵測到車牌: {plate_number}, 分數: {score}, 位置: {position}, 區域: {area}")
