@@ -10,9 +10,9 @@ wheels/
 .venv
 
 # YOLO
-datasets/*
-best_models/
-yolo_runs/
+/ai/yolo/datasets
+/ai/yolo/yolo_runs/
+/ai/yolo/best_models/
 *.pt
 *.ipynb
 
