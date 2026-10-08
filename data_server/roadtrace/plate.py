@@ -1,30 +1,55 @@
+import cv2
+import numpy as np
+from ultralytics import YOLO
 from rapidocr import RapidOCR
 
 class CarPlateManager:
     def __init__(self):
+        self.yolo = YOLO("./best_models/sch-pp85c_plate-641xp(20260917).pt")
         self.ocr = RapidOCR()
-        self.plates = {
+        self.plate_db = {
             "ABC-123": {
                 "x": 100, 
                 "y": 200, 
                 "area": 'A', 
-                "is_legal": False
+                "violations": ["改管噪音", "偽造車牌", "通緝贓車"]
             },
         }
-
-    def upsert_plate(self, plate_data):
+            
+    def insert_plate(self, plate_data: dict):
         plate_number = plate_data["plate_number"]
-        self.plates[plate_number] = {
+        self.plate_db[plate_number] = {
             "x": plate_data["x"],
             "y": plate_data["y"],
             "area": plate_data["area"],
-            "is_legal": plate_data["is_legal"]
+            "violations": plate_data["violations"]
         }
 
-    def get_plate_data(self, plate_number):
-        return self.plates.get(plate_number, None)
+    def get_plate_data(self, plate_number: str) -> dict:
+        return self.plate_db.get(plate_number, None)
 
-    def recognize_plate(self, yolo_results) -> list:
+    def upsert_plate_location(self, plate_number: str, position: tuple, area: str) -> None:
+        if plate_number in self.plate_db:
+            self.plate_db[plate_number]["x"] = position[0]
+            self.plate_db[plate_number]["y"] = position[1]
+            self.plate_db[plate_number]["area"] = area
+        else:
+            self.plate_db[plate_number] = {
+                "x": position[0], 
+                "y": position[1], 
+                "area":area, 
+                "violations": []
+            }
+
+    def update_area(self, plate_number: str, area: str) -> None:
+        self.ensure_plate_exits(plate_number)
+        self.plate_db[plate_number]["area"] = area
+
+    def recognize_plates(self, img_bytes) -> list:
+        yolo_results = self.detect_plates(img_bytes)
+        annotated_image = yolo_results[0].plot()
+        cv2.imwrite("result.jpg", annotated_image)
+        
         ocr_results = []
         for result in yolo_results:
             # YOLO 原始影像，型別是 numpy.ndarray
@@ -57,3 +82,16 @@ class CarPlateManager:
                         "position": (center_x, center_y),
                     })
         return ocr_results
+
+    def detect_plates(self, img_bytes):
+        image_array = np.frombuffer(img_bytes, dtype=np.uint8)
+        image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+
+        if image is None:
+            raise ValueError("Invalid image data")
+        
+        results = self.yolo.predict(image)
+        if len(results[0].boxes) <= 0:
+            print("Not plate detected")
+            return None
+        return results
