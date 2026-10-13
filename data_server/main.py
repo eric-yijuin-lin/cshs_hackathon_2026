@@ -6,10 +6,12 @@ import numpy as np
 from flask import Flask, jsonify, request, render_template
 from ultralytics import YOLO
 import network_helper
+from roadtrace.tracer import PathTracer
 
 app = Flask(__name__)
 
 image_queue = queue.Queue(maxsize=2)
+road_tracer = PathTracer()
 
 def display_images(detect_objects: bool):
     model = YOLO("YOLO26s.pt") if detect_objects else None
@@ -92,6 +94,14 @@ def image_inference():
         return jsonify({"message": "Image added to queue"})
     except queue.Full:
         return jsonify({"error": "Image queue is full"}), 400
+
+@app.route("/esp32/plate-debug", methods=["GET"])
+def plate_debug():
+    device_id = request.headers.get("X-Device-ID", "Device-A")
+    with open("./test.jpg", "rb") as f:
+        img_bytes = f.read()
+    road_tracer.trace_plate(device_id, img_bytes)
+    return "ok"
 
 if __name__ == "__main__":
     flask_thread = threading.Thread(

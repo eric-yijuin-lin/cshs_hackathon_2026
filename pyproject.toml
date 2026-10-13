@@ -19,6 +19,10 @@ yolo = [
 agent = [
     "openai>=2.54.0",
 ]
+ocr = [
+    "onnxruntime>=1.30.0",
+    "rapidocr>=3.9.2",
+]
 
 [dependency-groups]
 dev = [
