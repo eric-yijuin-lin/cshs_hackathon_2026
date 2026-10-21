@@ -14,7 +14,7 @@ image_queue = queue.Queue(maxsize=2)
 road_tracer = PathTracer()
 
 def display_images(detect_objects: bool):
-    model = YOLO("YOLO26s.pt") if detect_objects else None
+    model = YOLO("./ai/yolo/YOLO26s.pt") if detect_objects else None
     try:
         while True:
             try:

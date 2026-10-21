@@ -5,7 +5,7 @@ from rapidocr import RapidOCR
 
 class CarPlateManager:
     def __init__(self):
-        self.yolo = YOLO("./best_models/sch-pp85c_plate-641xp(20260917).pt")
+        self.yolo = YOLO("./ai/best_models/sch-pp85c_plate-641xp(20260917).pt")
         self.ocr = RapidOCR()
         self.plate_db = {
             "ABC-123": {
