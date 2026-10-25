@@ -1,14 +1,46 @@
-from datetime import datetime
+import os
 import threading
 import queue
+from pathlib import Path
+from datetime import datetime
+
 import cv2
 import numpy as np
-from flask import Flask, jsonify, request, render_template
+from dotenv import load_dotenv
+from flask import Flask, jsonify, request, render_template, abort
 from ultralytics import YOLO
+
+from linebot.v3 import WebhookHandler
+from linebot.v3.exceptions import InvalidSignatureError
+from linebot.v3.messaging import (
+    Configuration,
+    ApiClient,
+    MessagingApi,
+    ReplyMessageRequest,
+    TextMessage,
+    PushMessageRequest
+)
+from linebot.v3.webhooks import MessageEvent, TextMessageContent
+from linebot.v3.messaging import MessagingApiBlob
+from linebot.v3.webhooks import (
+    ImageMessageContent,
+    AudioMessageContent,
+)
+
 import network_helper
 from roadtrace.tracer import PathTracer
 
+load_dotenv()
+
 app = Flask(__name__)
+
+configuration = Configuration(
+    access_token=os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
+)
+
+handler = WebhookHandler(
+    os.environ["LINE_CHANNEL_SECRET"]
+)
 
 image_queue = queue.Queue(maxsize=2)
 road_tracer = PathTracer()
@@ -102,6 +134,123 @@ def plate_debug():
         img_bytes = f.read()
     road_tracer.trace_plate(device_id, img_bytes)
     return "ok"
+
+@app.post("/webhook")
+def webhook():
+    body = request.get_data(as_text=True)
+    signature = request.headers.get("X-Line-Signature", "")
+
+    try:
+        handler.handle(body, signature)
+    except InvalidSignatureError:
+        abort(400)
+
+    return "OK", 200
+
+
+@handler.add(MessageEvent, message=TextMessageContent)
+def handle_text_message(event):
+    user_text = event.message.text
+    user_id = event.source.user_id
+
+    print(f"LINE User ID：{user_id}")
+    print(f"收到 LINE 訊息：{user_text}")
+
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+
+        line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[
+                    TextMessage(text=f"Flask 收到：{user_text}")
+                ],
+            )
+        )
+
+@handler.add(MessageEvent, message=ImageMessageContent)
+def handle_image_message(event):
+    message_id = event.message.id
+
+    # 從 LINE 下載圖片
+    with ApiClient(configuration) as api_client:
+        blob_api = MessagingApiBlob(api_client)
+        image_data = blob_api.get_message_content(message_id)
+
+    # 建立儲存資料夾
+    upload_dir = Path("uploads")
+    upload_dir.mkdir(exist_ok=True)
+
+    # 儲存圖片
+    image_path = upload_dir / f"{message_id}.jpg"
+    image_path.write_bytes(image_data)
+
+    print(f"圖片已儲存：{image_path}")
+
+    # 回覆使用者
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+
+        line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[
+                    TextMessage(text="圖片已儲存！")
+                ],
+            )
+        )
+
+@handler.add(MessageEvent, message=AudioMessageContent)
+def handle_audio_message(event):
+    message_id = event.message.id
+    duration = event.message.duration
+
+    # 從 LINE 下載音訊
+    with ApiClient(configuration) as api_client:
+        blob_api = MessagingApiBlob(api_client)
+        audio_data = blob_api.get_message_content(message_id)
+
+    # 建立儲存資料夾
+    upload_dir = Path("uploads")
+    upload_dir.mkdir(exist_ok=True)
+
+    # 儲存音訊
+    audio_path = upload_dir / f"{message_id}.m4a"
+    audio_path.write_bytes(audio_data)
+
+    print(f"語音已儲存：{audio_path}")
+    print(f"語音長度：{duration} ms")
+
+    # 回覆使用者
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+
+        line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[
+                    TextMessage(text="語音已儲存！")
+                ],
+            )
+        )
+
+@app.get("/notify")
+def notify():
+    user_id = os.environ["LINE_DEBUG_USER_ID"]
+
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+
+        line_bot_api.push_message(
+            PushMessageRequest(
+                to=user_id,
+                messages=[
+                    TextMessage(text="這是 Flask 主動推送的測試訊息！")
+                ],
+            )
+        )
+
+    return {"status": "sent"}
 
 if __name__ == "__main__":
     flask_thread = threading.Thread(
