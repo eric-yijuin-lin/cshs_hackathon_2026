@@ -45,6 +45,9 @@ handler = WebhookHandler(
 image_queue = queue.Queue(maxsize=2)
 road_tracer = PathTracer()
 
+MODES = {"yolo", "upload", "agent"}
+user_modes = {}
+
 def display_images(detect_objects: bool):
     model = YOLO("./ai/yolo/YOLO26s.pt") if detect_objects else None
     try:
@@ -148,14 +151,28 @@ def webhook():
     return "OK", 200
 
 
+
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_text_message(event):
-    user_text = event.message.text
     user_id = event.source.user_id
+    user_text = event.message.text
 
-    print(f"LINE User ID：{user_id}")
     print(f"收到 LINE 訊息：{user_text}")
 
+    # 判斷是否為指令
+    if user_text.startswith(("/", "／")):
+        command = user_text[1:].strip().lower()
+
+        if command in MODES:
+            user_modes[user_id] = command
+            reply_text = f"已切換至 {command} 模式"
+        else:
+            reply_text = f"未知指令：{command}"
+
+    else:
+        reply_text = f"Flask 收到：{user_text}"
+
+    # 回覆 LINE 訊息
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
 
@@ -163,7 +180,7 @@ def handle_text_message(event):
             ReplyMessageRequest(
                 reply_token=event.reply_token,
                 messages=[
-                    TextMessage(text=f"Flask 收到：{user_text}")
+                    TextMessage(text=reply_text)
                 ],
             )
         )
