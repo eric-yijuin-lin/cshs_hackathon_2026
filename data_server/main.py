@@ -18,7 +18,10 @@ from linebot.v3.messaging import (
     MessagingApi,
     ReplyMessageRequest,
     TextMessage,
-    PushMessageRequest
+    TextMessageV2,
+    PushMessageRequest,
+    MentionSubstitutionObject,
+    UserMentionTarget,
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from linebot.v3.messaging import MessagingApiBlob
@@ -45,7 +48,7 @@ handler = WebhookHandler(
 image_queue = queue.Queue(maxsize=2)
 road_tracer = PathTracer()
 
-MODES = {"car", "poo", "upload", "agent"}
+MODES = {"car", "poo", "mention", "upload", "agent"}
 user_modes = {}
 
 print("正在載入 YOLO 模型 ...")
@@ -217,6 +220,7 @@ def handle_image_message(event):
 
             print(f"圖片已儲存：{image_path}")
             reply_text = "圖片已儲存！"
+            message = TextMessage(text=reply_text)
 
         case "car" | "poo":
             # 2. Binary Data → NumPy Array → OpenCV Image
@@ -247,9 +251,24 @@ def handle_image_message(event):
 
                 else:
                     reply_text = "未偵測到任何物件"
+                    message = TextMessage(text=reply_text)
+
+        case "mention":
+             print("[debug] 進入 mention")
+             print(f"[debug] source type: {event.source.type};  user id: {user_id}")
+             if event.source.type == "group" and user_id:
+                message = TextMessageV2(
+                    text="{user}\nFlask 收到 @ 測試：",
+                    substitution={
+                        "user": MentionSubstitutionObject(
+                            mentionee=UserMentionTarget(user_id=user_id)
+                        )
+                    }
+                )
 
         case _:
             reply_text = "圖片只支援 yolo, car 或 poo 模式"
+            message = TextMessage(text=reply_text)
                     
 
     # 回覆使用者
@@ -260,7 +279,7 @@ def handle_image_message(event):
             ReplyMessageRequest(
                 reply_token=event.reply_token,
                 messages=[
-                    TextMessage(text=reply_text)
+                    message
                 ],
             )
         )
