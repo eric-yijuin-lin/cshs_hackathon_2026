@@ -45,11 +45,19 @@ handler = WebhookHandler(
 image_queue = queue.Queue(maxsize=2)
 road_tracer = PathTracer()
 
-MODES = {"yolo", "upload", "agent"}
+MODES = {"car", "poo", "upload", "agent"}
 user_modes = {}
 
+print("正在載入 YOLO 模型 ...")
+car_model = YOLO("./ai/yolo/YOLO26s.pt")
+poo_model = YOLO("./ai/yolo/便便n(10_27)100次.pt")
+print("載入完畢")
+
 def display_images(detect_objects: bool):
+    print("正在載入 queue 使用的 YOLO...")
     model = YOLO("./ai/yolo/YOLO26s.pt") if detect_objects else None
+    print("載入完畢")
+
     try:
         while True:
             try:
@@ -187,6 +195,7 @@ def handle_text_message(event):
 
 @handler.add(MessageEvent, message=ImageMessageContent)
 def handle_image_message(event):
+    user_id = event.source.user_id
     message_id = event.message.id
 
     # 從 LINE 下載圖片
@@ -194,15 +203,54 @@ def handle_image_message(event):
         blob_api = MessagingApiBlob(api_client)
         image_data = blob_api.get_message_content(message_id)
 
-    # 建立儲存資料夾
-    upload_dir = Path("uploads")
-    upload_dir.mkdir(exist_ok=True)
+    reply_text = "正在處理圖片"
+    mode = user_modes[user_id]
+    match mode:
+        case "upload": 
+            # 建立儲存資料夾
+            upload_dir = Path("uploads")
+            upload_dir.mkdir(exist_ok=True)
 
-    # 儲存圖片
-    image_path = upload_dir / f"{message_id}.jpg"
-    image_path.write_bytes(image_data)
+            # 儲存圖片
+            image_path = upload_dir / f"{message_id}.jpg"
+            image_path.write_bytes(image_data)
 
-    print(f"圖片已儲存：{image_path}")
+            print(f"圖片已儲存：{image_path}")
+            reply_text = "圖片已儲存！"
+
+        case "car" | "poo":
+            # 2. Binary Data → NumPy Array → OpenCV Image
+            image_array = np.frombuffer(image_data, dtype=np.uint8)
+            image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+
+            # 3. 執行 YOLO
+            if image is not None:
+                if mode == "car":
+                    results = car_model.predict(image, verbose=False)
+                else:
+                    results = poo_model.predict(image, verbose=False)
+
+                result = results[0]
+                if len(result.boxes) > 0:
+                    detections = []
+
+                    for box in result.boxes:
+                        class_id = int(box.cls[0])
+                        class_name = result.names[class_id]
+                        x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+
+                        detections.append(
+                            f"{class_name}: ({x1}, {y1}, {x2}, {y2})"
+                        )
+
+                    reply_text = "\n".join(detections)
+
+                else:
+                    reply_text = "未偵測到任何物件"
+
+        case _:
+            reply_text = "圖片只支援 yolo, car 或 poo 模式"
+                    
 
     # 回覆使用者
     with ApiClient(configuration) as api_client:
@@ -212,7 +260,7 @@ def handle_image_message(event):
             ReplyMessageRequest(
                 reply_token=event.reply_token,
                 messages=[
-                    TextMessage(text="圖片已儲存！")
+                    TextMessage(text=reply_text)
                 ],
             )
         )
