@@ -18,3 +18,7 @@ wheels/
 
 # env file
 .env
+
+# auto car sound level (use /esp32/sound_level/...
+/esp32/auto_car/SoundLevel.h
+/esp32/auto_car/SoundLevel.cpp
