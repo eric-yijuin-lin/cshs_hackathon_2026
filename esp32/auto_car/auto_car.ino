@@ -1,5 +1,5 @@
-
 #include <ESP32Servo.h>
+#include "SoundLevel.h"
 
 const int MOTOR_IA = 16;
 const int MOTOR_IB = 17;
@@ -48,6 +48,35 @@ void setServoAngle(int angle) {
   Serial.printf("[SG90] Read angle = %d\n", myServo.read());
 }
 
+// ===== Sound Level =====
+SoundLevel sound(26, 25, 33, 104.0, 104.0);
+
+// ===== Audio Data =====
+struct AudioData
+{
+    SoundReading micA;
+    SoundReading micB;
+};
+
+// FreeRTOS Queue
+QueueHandle_t audioQueue = nullptr;
+
+
+// ===== Audio Task =====
+void audioTask(void* parameter)
+{
+    AudioData data;
+
+    while (true)
+    {
+        if (sound.update(data.micA, data.micB))
+        {
+            // 將最新結果放入 Queue
+            // Queue 長度為 1，覆蓋上一筆資料
+            xQueueOverwrite(audioQueue, &data);
+        }
+    }
+}
 
 void setup() {
   Serial.begin(115200);
@@ -88,48 +117,71 @@ void setup() {
                 ledcReadFreq(SERVO_PIN));
 
   Serial.println("[INIT] Setup completed.");
+
+  // ========= 分貝相關 =============
+  if (!sound.begin())
+  {
+      Serial.println("I2S init failed");
+      while (true) delay(1000);
+  }
+
+  // 建立只能存放一筆 AudioData 的 Queue
+  audioQueue = xQueueCreate(1, sizeof(AudioData));
+
+  if (audioQueue == nullptr)
+  {
+      Serial.println("Queue creation failed");
+      while (true) delay(1000);
+  }
+
+  // 建立 Audio Task
+  BaseType_t result = xTaskCreatePinnedToCore(
+      audioTask,
+      "AudioTask",
+      4096,
+      nullptr,
+      1,
+      nullptr,
+      0
+  );
+
+  if (result != pdPASS)
+  {
+      Serial.println("Audio Task creation failed");
+      while (true) delay(1000);
+  }
 }
 
 
 void loop() {
-  // 1. 90 度，前進 2 秒
-  setServoAngle(90);
+  AudioData data;
+  // 不等待音訊，直接讀取 Queue 中的最新資料
+  if (xQueuePeek(audioQueue, &data, 0) == pdTRUE)
+  {
+      // ===== 這裡就是 Control 取得音訊資料的位置 =====
+      double dbA = data.micA.rmsDbFS;
+      double dbB = data.micB.rmsDbFS;
+      double difference = dbA - dbB;
+
+      printf("[DEBUG] Mic A: %.1f dB, Mic B: %.1f dB, Difference: %.1f dB\n",
+                dbA, dbB, difference);
+
+      if (difference > 5) {
+          Serial.println("[CONTROL] Mic A louder than Mic B");
+          setServoAngle(135);
+      }
+      else if (difference < -5) 
+      {
+          Serial.println("[CONTROL] Mic B louder than Mic A");
+          setServoAngle(45);
+      }
+      else 
+      {
+          Serial.println("[CONTROL] Mic A and Mic B are similar");
+          setServoAngle(90);
+      }
+  }
+
   setMotorSpeed(80);
-  delay(2000);
-
-  // 2. 保持 90 度，後退 2 秒
-  setMotorSpeed(0);
-  delay(300);
-  setMotorSpeed(-80);
-  delay(2000);
-
-  // 3. 45 度，前進 2 秒
-  setMotorSpeed(0);
-  setServoAngle(45);
-  delay(500);
-  setMotorSpeed(80);
-  delay(2000);
-
-  // 4. 保持 45 度，後退 2 秒
-  setMotorSpeed(0);
-  delay(300);
-  setMotorSpeed(-80);
-  delay(2000);
-
-  // 5. 135 度，前進 2 秒
-  setMotorSpeed(0);
-  setServoAngle(135);
-  delay(500);
-  setMotorSpeed(80);
-  delay(2000);
-
-  // 6. 保持 135 度，後退 2 秒
-  setMotorSpeed(0);
-  delay(300);
-  setMotorSpeed(-80);
-  delay(2000);
-
-  // 結束一輪，停止 1 秒
-  setMotorSpeed(0);
   delay(1000);
 }
