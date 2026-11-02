@@ -1,6 +1,8 @@
 #include "SoundLevel.h"
 
-SoundLevel sound;
+// GPIO：BCLK、WS、SD
+// Offset：Mic A、Mic B
+SoundLevel sound(26, 25, 33, 104.0, 104.0);
 
 void setup()
 {
@@ -15,17 +17,14 @@ void setup()
 
 void loop()
 {
-    SoundReading reading;
+    SoundReading micA, micB;
 
-    if (sound.update(reading))
+    if (sound.update(micA, micB))
     {
-        Serial.print("RMS dBFS: ");
-        Serial.println(reading.rmsDbFS);
+        Serial.printf("Mic A SPL: %.1f\n", micA.dbSPL);
+        Serial.printf("Mic B SPL: %.1f\n", micB.dbSPL);
 
-        Serial.print("dB SPL: ");
-        Serial.println(reading.dbSPL);
-
-        Serial.print("dBA: ");
-        Serial.println(reading.dBA);
+        Serial.printf("Mic A dBA: %.1f\n", micA.dBA);
+        Serial.printf("Mic B dBA: %.1f\n", micB.dBA);
     }
 }

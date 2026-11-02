@@ -1,24 +1,26 @@
 #include "SoundLevel.h"
 #include <math.h>
 
-SoundLevel::SoundLevel(int bclk, int ws, int sd)
-    : bclk_(bclk), ws_(ws), sd_(sd) {}
+SoundLevel::SoundLevel(int bclk, int ws, int sd,
+                       double leftCalibrationOffset, double rightCalibrationOffset)
+    : bclk_(bclk), ws_(ws), sd_(sd),
+      left_(leftCalibrationOffset), right_(rightCalibrationOffset) {}
 
 SoundLevel::HighPass::HighPass(float cutoff, float sampleRate) {
-    float dt = 1.0f / sampleRate;
-    float rc = 1.0f / (2.0f * PI * cutoff);
+    const float dt = 1.0f / sampleRate;
+    const float rc = 1.0f / (2.0f * PI * cutoff);
     alpha = rc / (rc + dt);
 }
 
 float SoundLevel::HighPass::process(float input) {
-    float output = alpha * (previousOutput + input - previousInput);
+    const float output = alpha * (previousOutput + input - previousInput);
     previousInput = input;
     previousOutput = output;
     return output;
 }
 
 float SoundLevel::Biquad::process(float x) {
-    float y = b0 * x + z1;
+    const float y = b0 * x + z1;
     z1 = b1 * x - a1 * y + z2;
     z2 = b2 * x - a2 * y;
     return y;
@@ -39,6 +41,27 @@ double SoundLevel::rmsToDbFS(double rms) {
     return 20.0 * log10(rms / fullScaleRms);
 }
 
+void SoundLevel::Channel::process(int32_t raw) {
+    const int32_t sample = SoundLevel::convertSample(raw);
+    const double filtered = hp.process((float)sample);
+    const double aFiltered = aFilter.process((float)sample);
+    squareSum += filtered * filtered;
+    aSquareSum += aFiltered * aFiltered;
+    const double amplitude = fabs(filtered);
+    if (amplitude > latestFramePeak) latestFramePeak = amplitude;
+}
+
+void SoundLevel::Channel::emit(SoundReading& reading, uint32_t sampleCount) {
+    const double rms = sqrt(squareSum / sampleCount);
+    const double aRms = sqrt(aSquareSum / sampleCount);
+    reading.rmsDbFS = SoundLevel::rmsToDbFS(rms);
+    reading.dbSPL = reading.rmsDbFS + calibrationOffset;
+    reading.dBA = SoundLevel::rmsToDbFS(aRms) + calibrationOffset;
+    reading.peak = latestFramePeak;
+    squareSum = 0.0;
+    aSquareSum = 0.0;
+}
+
 bool SoundLevel::begin() {
     i2s_.setPins(bclk_, ws_, -1, sd_);
     return i2s_.begin(
@@ -46,45 +69,27 @@ bool SoundLevel::begin() {
         kSampleRate,
         I2S_DATA_BIT_WIDTH_32BIT,
         I2S_SLOT_MODE_STEREO,
-        I2S_STD_SLOT_LEFT
+        I2S_STD_SLOT_BOTH
     );
 }
 
-bool SoundLevel::update(SoundReading& reading) {
-    size_t bytesRead = i2s_.readBytes((char*)samples_, sizeof(samples_));
+bool SoundLevel::update(SoundReading& left, SoundReading& right) {
+    const size_t bytesRead = i2s_.readBytes((char*)samples_, sizeof(samples_));
     const int rawCount = bytesRead / sizeof(int32_t);
-    // Stereo interleaved: only complete L/R pairs, using left slots.
-    const int validCount = rawCount / 2;
-    if (validCount == 0) return false;
+    const int frameCount = rawCount / 2;
+    if (frameCount == 0) return false;
 
-    double frameSquareSum = 0;
-    double frameASquareSum = 0;
-    double peak = 0;
-    for (int i = 0; i < validCount * 2; i += 2) {
-        int32_t sample = convertSample(samples_[i]);
-        double filtered = hp_.process((float)sample);
-        double aFiltered = aFilter_.process((float)sample);
-        frameSquareSum += filtered * filtered;
-        frameASquareSum += aFiltered * aFiltered;
-        double amplitude = fabs(filtered);
-        if (amplitude > peak) peak = amplitude;
+    left_.latestFramePeak = 0.0;
+    right_.latestFramePeak = 0.0;
+    for (int i = 0; i < frameCount * 2; i += 2) {
+        left_.process(samples_[i]);
+        right_.process(samples_[i + 1]);
     }
-
-    squareSum_ += frameSquareSum;
-    aSquareSum_ += frameASquareSum;
-    sampleCount_ += validCount;
-
+    sampleCount_ += frameCount;
     if (sampleCount_ < kSampleRate) return false;
 
-    double rms = sqrt(squareSum_ / sampleCount_);
-    double aRms = sqrt(aSquareSum_ / sampleCount_);
-    reading.rmsDbFS = rmsToDbFS(rms);
-    reading.dbSPL = reading.rmsDbFS + kCalibrationOffset;
-    reading.dBA = rmsToDbFS(aRms) + kCalibrationOffset;
-    reading.peak = peak; // Most recent frame; not a 1-second peak hold.
-
-    squareSum_ = 0;
-    aSquareSum_ = 0;
+    left_.emit(left, sampleCount_);
+    right_.emit(right, sampleCount_);
     sampleCount_ = 0;
     return true;
 }
