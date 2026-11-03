@@ -3,7 +3,7 @@ import threading
 import queue
 import cv2
 import numpy as np
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, send_file
 from ultralytics import YOLO
 import network_helper
 from roadtrace.tracer import PathTracer
@@ -102,6 +102,13 @@ def plate_debug():
         img_bytes = f.read()
     road_tracer.trace_plate(device_id, img_bytes)
     return "ok"
+
+@app.route("/esp32/audio_download", methods=["GET"])
+def audio_download():
+    return send_file(
+        "./static/audio/sample_audio.wav",
+        mimetype="audio/wav"
+    )
 
 if __name__ == "__main__":
     flask_thread = threading.Thread(
