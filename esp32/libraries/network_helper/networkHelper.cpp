@@ -1,7 +1,7 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
-#include "networkSetup.h"
+#include "networkHelper.h"
 
 const char* bootSSID     = "iPhone-YJL";
 const char* bootPassword = "12345678";

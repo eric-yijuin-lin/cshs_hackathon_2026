@@ -16,6 +16,7 @@ PURPOSE_API = {
         f"{API_ROOT}/target-gps",
         f"{API_ROOT}/shortest-path",
     ],
+    "toilet_box": ["https://demo.goattl.net/esp32/audio_download"]
 }
 
 def get_network_info(purpose: str):
