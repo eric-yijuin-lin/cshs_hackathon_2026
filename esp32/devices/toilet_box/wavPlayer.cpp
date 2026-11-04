@@ -44,7 +44,7 @@ void releaseWAV() {
 }
 
 // 下載 WAV 至 PSRAM
-bool downloadWAV(const char* url) {
+bool downloadWAV(String url) {
   releaseWAV();
 
   if (!psramFound()) {

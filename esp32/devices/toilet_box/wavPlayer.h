@@ -4,7 +4,7 @@
 #include <Arduino.h>
 
 // HTTP / HTTPS 下載 WAV 到 PSRAM
-bool downloadWAV(const char* url);
+bool downloadWAV(String url);
 
 // 播放已下載的 WAV
 bool playWAV();
