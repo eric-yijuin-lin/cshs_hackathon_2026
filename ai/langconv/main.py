@@ -5,7 +5,7 @@
 import os
 from converter import LanguageConverter
 
-API_KEY = os.getenv("YATING_API_KEY")
+API_KEY = os.environ["YATING_API_KEY"]
 converter = LanguageConverter(api_key=API_KEY)
 
 # ============= 測試語音轉文字 ==============
