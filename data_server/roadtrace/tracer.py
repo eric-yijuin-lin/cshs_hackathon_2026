@@ -2,8 +2,8 @@ from roadtrace.plate import CarPlateManager
 from roadtrace.roadpath import RoadPathManager
 
 class PathTracer:
-    def __init__(self):
-        self.plate_manager = CarPlateManager()
+    def __init__(self, model_path: str):
+        self.plate_manager = CarPlateManager(model_path)
         self.path_manager = RoadPathManager()
 
     def trace_plate(self, device_id: str, img_bytes: list):

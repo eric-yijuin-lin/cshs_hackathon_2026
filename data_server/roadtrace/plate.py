@@ -4,8 +4,11 @@ from ultralytics import YOLO
 from rapidocr import RapidOCR
 
 class CarPlateManager:
-    def __init__(self):
-        self.yolo = YOLO("./ai/best_models/sch-pp85c_plate-641xp(20260917).pt")
+    def __init__(self, model_path: str):
+        print(f"初始化 CarPlateManager，使用模型: {model_path}")
+        self.yolo = YOLO(model_path)
+        print("CarPlateManager 初始化完成")
+
         self.ocr = RapidOCR()
         self.plate_db = {
             "ABC-123": {
@@ -47,6 +50,9 @@ class CarPlateManager:
 
     def recognize_plates(self, img_bytes) -> list:
         yolo_results = self.detect_plates(img_bytes)
+        if not yolo_results:
+            return []
+        
         annotated_image = yolo_results[0].plot()
         cv2.imwrite("result.jpg", annotated_image)
         
@@ -92,6 +98,6 @@ class CarPlateManager:
         
         results = self.yolo.predict(image)
         if len(results[0].boxes) <= 0:
-            print("Not plate detected")
+            print("No plate detected")
             return None
         return results

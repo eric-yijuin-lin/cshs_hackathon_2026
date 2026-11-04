@@ -1,3 +1,4 @@
+print("import 相關模組...")
 from datetime import datetime
 import threading
 import queue
@@ -7,11 +8,12 @@ from flask import Flask, jsonify, request, render_template, send_file
 from ultralytics import YOLO
 import network_helper
 from roadtrace.tracer import PathTracer
+print("import 完成")
 
 app = Flask(__name__)
 
 image_queue = queue.Queue(maxsize=2)
-road_tracer = PathTracer()
+road_tracer = PathTracer("./ai/best_models/車牌m(115_11_3)150次.pt")
 
 def display_images(detect_objects: bool):
     model = YOLO("./ai/yolo/YOLO26s.pt") if detect_objects else None
@@ -93,7 +95,21 @@ def image_inference():
         image_queue.put(byte_data, timeout=1)
         return jsonify({"message": "Image added to queue"})
     except queue.Full:
-        return jsonify({"error": "Image queue is full"}), 400
+        return jsonify({"error": "Image queue is full"}), 503
+
+@app.route("/esp32/sound-snapshot", methods=["POST"])
+def sound_snapshot():
+    device_id = request.headers.get("X-Device-ID")
+    sound_level = float(request.headers.get("X-Sound-Level"))
+    byte_data = request.get_data()
+    print(f"偵測到聲音快照，裝置ID: {device_id}, 聲音分貝: {sound_level}, 資料大小: {len(byte_data)} bytes")
+
+    try:
+        road_tracer.trace_plate(device_id, byte_data)
+        return "ok"
+    except Exception as e:
+        print("Error:", e)
+        return "error", 500
 
 @app.route("/esp32/plate-debug", methods=["GET"])
 def plate_debug():
