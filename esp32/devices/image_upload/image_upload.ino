@@ -2,7 +2,7 @@
 #include <WiFiClient.h>
 #include <HTTPClient.h>
 #include <networkHelper.h>
-#include "cameraSetup.h"
+#include <cameraSetup.h>
 
 NetworkConfig networkConfig;
 
