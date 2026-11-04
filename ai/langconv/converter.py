@@ -89,7 +89,7 @@ class LanguageConverter:
         headers = {'key': self.api_key, 'Content-Type': 'application/json'}
         body = {
             "input":{
-                "text":"今天天氣真好，我要出去玩",
+                "text":text,
                 "type":"text"
             },
             "voice":{
