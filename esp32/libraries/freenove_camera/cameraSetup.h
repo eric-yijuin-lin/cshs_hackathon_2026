@@ -19,4 +19,4 @@
 #define HREF_GPIO_NUM 7
 #define PCLK_GPIO_NUM 13
 
-void initCamera();
+bool initCamera();

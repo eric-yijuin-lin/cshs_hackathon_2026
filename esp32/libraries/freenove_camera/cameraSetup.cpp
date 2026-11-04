@@ -1,6 +1,6 @@
 #include "cameraSetup.h"
 
-void initCamera() {
+bool initCamera() {
   camera_config_t config = {};
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -46,7 +46,7 @@ void initCamera() {
   if (err != ESP_OK) {
     Serial.printf("Camera init failed with error 0x%x", err);
     delay(1000);
-    ESP.restart();
+    return false;
   }
 
   sensor_t *s = esp_camera_sensor_get();
@@ -61,4 +61,5 @@ void initCamera() {
   //   s->set_framesize(s, FRAMESIZE_QVGA);
   // }
   Serial.println("Camera init done");
+  return true;
 }
