@@ -7,9 +7,15 @@
 
 NetworkConfig networkConfig;
 
-const int BUTTON_PIN = 47;
+const int CAPTURE_BUTTON_PIN = 14;
+const int URGENT_BUTTON_PIN = 47;
 const int WAV_FILE_SHIFT = 4; // 便便類型的位移量，對應音檔索引
 
+
+int captureState = LOW;
+int urgentState = LOW;
+
+String deviceID = "toilet_1"; // 設備 ID
 String wavCountUrl; // 取得音檔數量
 String wavDownloadUrl; // 音檔下載
 String checkPooUrl; // 檢查便便
@@ -22,6 +28,9 @@ void setup() {
   bool network_ok = true;
   bool camera_ok = true;
   bool wav_ok = true;
+
+  pinMode(CAPTURE_BUTTON_PIN, INPUT);
+  pinMode(URGENT_BUTTON_PIN,  INPUT);
 
   if (!initNetwork("toilet_box", networkConfig)) { // 連接 wifi
     Serial.println("Failed to initialize network.");
@@ -55,8 +64,15 @@ void setup() {
 }
 
 void loop() {
-  int state = digitalRead(BUTTON_PIN);
-  if (state == HIGH) {
+  captureState = digitalRead(CAPTURE_BUTTON_PIN);
+  urgentState = digitalRead(URGENT_BUTTON_PIN);
+
+  // Serial.print("captureState: ");
+  // Serial.println(captureState);
+  // Serial.print("urgentState: ");
+  // Serial.println(urgentState);
+
+  if (captureState == HIGH) {
     playWAV(0); // 播放第一個音檔 (button-press)
     delay(3000);
 
@@ -80,7 +96,14 @@ void loop() {
 
     playWAV(10); // 播放第十個音檔 (flush)
     delay(1000);
+  } else if (urgentState == HIGH) {
+    Serial.println("urgentState == HIGH");
+    if (urgentCall()) {
+      playWAV(11); // 播放第 12 個音檔 (urgent-call)
+      delay(1000);
+    }
   }
+
   delay(100);
 }
 
@@ -136,6 +159,7 @@ int checkPoo() {
     }
 
     // 3. 告訴 Server：Body 就是一張 JPEG
+    http.addHeader("X-Device-ID", deviceID);
     http.addHeader("Content-Type", "image/jpeg");
 
     // 4. 直接把 framebuffer 當 POST body
@@ -168,4 +192,34 @@ int checkPoo() {
     esp_camera_fb_return(fb);
 
     return pooType;
+}
+
+bool urgentCall() {
+    WiFiClient client;
+    HTTPClient http;
+
+    Serial.printf("Querying: %s\n", urgentCallUrl.c_str());
+    if (!http.begin(client, urgentCallUrl)) {
+        Serial.println("HTTP begin failed");
+        return false;
+    }
+
+    http.addHeader("X-Device-ID", deviceID);
+
+    int httpCode = http.GET();
+    if (httpCode > 0) {
+        Serial.printf("HTTP response: %d\n", httpCode);
+
+        String response = http.getString();
+        Serial.printf("Server response: %s\n", response.c_str());
+    }
+    else {
+        Serial.printf(
+            "HTTP POST failed: %s\n",
+            http.errorToString(httpCode).c_str()
+        );
+    }
+
+    http.end();
+    return true;
 }

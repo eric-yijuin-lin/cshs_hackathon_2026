@@ -55,7 +55,7 @@ handler = WebhookHandler(
 image_queue = queue.Queue(maxsize=2)
 road_tracer = PathTracer("./ai/best_models/車牌m(115_11_3)150次.pt")
 
-MODES = {"car", "poo", "mention", "upload", "agent"}
+MODES = {"car", "poo", "mention", "upload", "agent", "debug"}
 user_modes = {}
 
 audio_files = [
@@ -220,9 +220,11 @@ def handle_text_message(event):
         if command in MODES:
             user_modes[user_id] = command
             reply_text = f"已切換至 {command} 模式"
+
+            if command == "debug":
+                print(event)
         else:
             reply_text = f"未知指令：{command}"
-
     else:
         reply_text = f"Flask 收到：{user_text}"
 
@@ -394,8 +396,9 @@ def audio_download():
 
 @app.route("/esp32/check-poo", methods=["POST"])
 def check_poo():
+    device_id = request.headers.get("X-Device-ID")
     byte_data = request.get_data()
-    print(f"收到便便照片, 資料大小: {len(byte_data)} bytes")
+    print(f"收到便便照片, device_id: {device_id}, 資料大小: {len(byte_data)} bytes")
 
     image_array = np.frombuffer(byte_data, dtype=np.uint8)
     image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
@@ -406,6 +409,50 @@ def check_poo():
     print(f"便便類型: {class_name} (class_id: {class_id})")
     return str(class_id), 200
 
+@app.route("/esp32/urgent-call", methods=["GET"])
+def urgent_call():
+    device_id = request.headers.get("X-Device-ID")
+    # device_id = "debug_1"
+    address = "測試地址"
+    print(f"收到緊急呼叫, device_id: {device_id}")
+
+    user_id = os.environ["LINE_DEBUG_USER_ID"]
+    group_id = os.environ["LINE_DEBUG_GROUP_ID"]
+    text = f"🚨廁所裝置 {device_id} 發出緊急呼叫！\n\n{{family}} 請立刻致電關心！\n\n {{hospital}} 請立刻派人到 {address}"
+
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        message = TextMessageV2(
+            text=text,
+            substitution={
+                "family": MentionSubstitutionObject(
+                    mentionee=UserMentionTarget(
+                        user_id=user_id
+                    )
+                ),
+                "hospital": MentionSubstitutionObject(
+                    mentionee=UserMentionTarget(
+                        user_id=user_id
+                    )
+                )
+            }
+    )
+
+    try:
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+
+            line_bot_api.push_message(
+                PushMessageRequest(
+                    to=group_id,
+                    messages=[message]
+                )
+            )
+    except Exception:
+        app.logger.exception("LINE push failed")
+        return jsonify({"status": "error"}), 502
+
+    return jsonify({"status": "success"}), 200
 
 if __name__ == "__main__":
     flask_thread = threading.Thread(
