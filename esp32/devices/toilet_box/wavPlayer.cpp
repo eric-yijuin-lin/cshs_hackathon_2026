@@ -1,7 +1,8 @@
 #include "WavPlayer.h"
-
 #include <WiFi.h>
-#include <WiFiClientSecure.h>
+#include <WiFiClient.h>
+#include <map>
+#include <climits>
 #include <HTTPClient.h>
 #include <ESP_I2S.h>
 #include <esp_heap_caps.h>
@@ -17,8 +18,44 @@ static constexpr size_t DOWNLOAD_CHUNK_SIZE = 2048;
 
 // 私有變數
 static I2SClass I2S;
-static uint8_t* wavBuffer = nullptr;
-static size_t wavSize = 0;
+struct WavData {
+  uint8_t* buffer;
+  size_t size;
+};
+
+// index -> WAV 資料；每個音檔獨立存放於 PSRAM
+static std::map<int, WavData> wavFiles;
+
+// 共用 HTTP GET 初始化與狀態檢查（僅支援內網 HTTP）
+static bool startHttpGet(HTTPClient& http, WiFiClient& client, const String& url) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi not connected!");
+    return false;
+  }
+
+  if (!url.startsWith("http://")) {
+    Serial.println("Only HTTP URLs are supported!");
+    return false;
+  }
+
+  http.setTimeout(DOWNLOAD_IDLE_TIMEOUT);
+  client.setTimeout(DOWNLOAD_IDLE_TIMEOUT);
+
+  Serial.printf("HTTP GET: %s\n", url.c_str());
+  if (!http.begin(client, url)) {
+    Serial.println("HTTP begin failed!");
+    return false;
+  }
+
+  int code = http.GET();
+  if (code != HTTP_CODE_OK) {
+    Serial.printf("HTTP error: %d\n", code);
+    http.end();
+    return false;
+  }
+
+  return true;
+}
 
 // Little-endian 讀取
 static uint16_t read16(const uint8_t* p) {
@@ -33,73 +70,83 @@ static uint32_t read32(const uint8_t* p) {
          ((uint32_t)p[3] << 24);
 }
 
-// 釋放 PSRAM
+// 釋放所有已下載的 WAV
 void releaseWAV() {
-  if (wavBuffer != nullptr) {
-    free(wavBuffer);
-    wavBuffer = nullptr;
+  for (auto& item : wavFiles) {
+    free(item.second.buffer);
   }
-
-  wavSize = 0;
+  wavFiles.clear();
 }
 
-// 下載 WAV 至 PSRAM
-bool downloadWAV(String url) {
-  releaseWAV();
+// 取得音檔數量，API 直接回傳整數
+// 失敗回傳 -1
+int getWavFileCount(String url) {
+  WiFiClient client;
+  HTTPClient http;
+
+  if (!startHttpGet(http, client, url)) return -1;
+
+  String response = http.getString();
+  http.end();
+  response.trim();
+
+  // 確認回傳內容為非負整數
+  if (response.isEmpty()) return -1;
+
+  for (size_t i = 0; i < response.length(); i++) {
+    if (!isDigit(response[i])) {
+      Serial.println("Invalid WAV count!");
+      return -1;
+    }
+  }
+
+  long count = response.toInt();
+  if (count < 0 || count > INT_MAX) return -1;
+
+  Serial.printf("WAV file count: %ld\n", count);
+  return (int)count;
+}
+
+// 下載指定 index 的 WAV 至 PSRAM；不清除其他已下載音檔
+bool downloadWAV(String url, int index) {
+  if (index < 0) {
+    Serial.println("Invalid WAV index!");
+    return false;
+  }
 
   if (!psramFound()) {
     Serial.println("PSRAM not found!");
     return false;
   }
 
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi not connected!");
-    return false;
-  }
+  // 原始 URL 已有 query 時使用 &，否則使用 ?
+  url += (url.indexOf('?') >= 0 ? "&index=" : "?index=");
+  url += String(index);
 
-  WiFiClientSecure client;
-  client.setInsecure();  // 僅供測試，正式環境應驗證憑證
-
+  WiFiClient client;
   HTTPClient http;
-  http.setTimeout(DOWNLOAD_IDLE_TIMEOUT);
-  client.setTimeout(DOWNLOAD_IDLE_TIMEOUT);
-
-  if (!http.begin(client, url)) {
-    Serial.println("HTTP begin failed!");
-    return false;
-  }
-
-  int code = http.GET();
-
-  if (code != HTTP_CODE_OK) {
-    Serial.printf("HTTP error: %d\n", code);
-    http.end();
-    return false;
-  }
+  if (!startHttpGet(http, client, url)) return false;
 
   int length = http.getSize();
-
   if (length <= 44) {
-    Serial.println("Invalid WAV length!");
+    Serial.println("Invalid WAV length (Content-Length required)!");
     http.end();
     return false;
   }
 
-  Serial.printf("Downloading %d bytes...\n", length);
+  Serial.printf("Downloading %s\n", url.c_str());
+  Serial.printf("total %d bytes...\n", length);
 
-  wavBuffer = (uint8_t*)heap_caps_malloc(
-    length,
-    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
+  uint8_t* buffer = (uint8_t*)heap_caps_malloc(
+    (size_t)length, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
   );
-
-  if (wavBuffer == nullptr) {
+  if (buffer == nullptr) {
     Serial.println("PSRAM allocation failed!");
     http.end();
     return false;
   }
 
   WiFiClient* stream = http.getStreamPtr();
-
   size_t received = 0;
   unsigned long lastDataTime = millis();
 
@@ -107,18 +154,13 @@ bool downloadWAV(String url) {
     int availableBytes = stream->available();
 
     if (availableBytes > 0) {
-      size_t remaining = length - received;
-
+      size_t remaining = (size_t)length - received;
       size_t chunk = min(
         (size_t)availableBytes,
         min(DOWNLOAD_CHUNK_SIZE, remaining)
       );
 
-      size_t n = stream->readBytes(
-        wavBuffer + received,
-        chunk
-      );
-
+      size_t n = stream->readBytes(buffer + received, chunk);
       if (n > 0) {
         received += n;
         lastDataTime = millis();
@@ -134,34 +176,35 @@ bool downloadWAV(String url) {
       Serial.println("Download timeout!");
       break;
     }
-
     delay(1);
   }
 
   http.end();
-
-  Serial.printf(
-    "Received: %u / %d bytes\n",
-    (unsigned)received,
-    length
-  );
+  Serial.printf("Received: %u / %d bytes\n", (unsigned)received, length);
 
   if (received != (size_t)length) {
     Serial.println("Incomplete download!");
-    releaseWAV();
+    free(buffer);
     return false;
   }
 
-  wavSize = received;
-
-  if (memcmp(wavBuffer, "RIFF", 4) != 0 ||
-      memcmp(wavBuffer + 8, "WAVE", 4) != 0) {
+  if (memcmp(buffer, "RIFF", 4) != 0 ||
+      memcmp(buffer + 8, "WAVE", 4) != 0) {
     Serial.println("Invalid WAV file!");
-    releaseWAV();
+    free(buffer);
     return false;
   }
 
-  Serial.println("WAV downloaded to PSRAM!");
+  // 同一 index 重新下載時，只取代該筆；其他 index 保留
+  auto existing = wavFiles.find(index);
+  if (existing != wavFiles.end()) {
+    free(existing->second.buffer);
+    existing->second = {buffer, received};
+  } else {
+    wavFiles.emplace(index, WavData{buffer, received});
+  }
+
+  Serial.printf("WAV [%d] downloaded to PSRAM!\n", index);
   return true;
 }
 
@@ -184,11 +227,16 @@ static bool writeI2S(const uint8_t* data, size_t size) {
 }
 
 // 播放 WAV
-bool playWAV() {
-  if (wavBuffer == nullptr || wavSize < 44) {
-    Serial.println("No WAV loaded!");
+// 根據 index 播放已下載的 WAV
+bool playWAV(int index) {
+  auto it = wavFiles.find(index);
+  if (it == wavFiles.end() || it->second.buffer == nullptr || it->second.size < 44) {
+    Serial.printf("WAV [%d] not loaded!\n", index);
     return false;
   }
+
+  const uint8_t* wavBuffer = it->second.buffer;
+  const size_t wavSize = it->second.size;
 
   uint16_t audioFormat = 0;
   uint16_t channels = 0;

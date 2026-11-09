@@ -47,8 +47,7 @@ void setup() {
   if (network_ok && camera_ok && sound_ok) {
     Serial.println("All devices initialized successfully.");
   } else {
-    Serial.println("One or more devices failed to initialize.");
-    Serial.println("Restart ESP32 after 10 seconds...");
+    Serial.println("Initialization failed, restart after 10 seconds...");
     delay(10000);
     ESP.restart();
   }

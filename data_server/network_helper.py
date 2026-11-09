@@ -16,9 +16,14 @@ PURPOSE_API = {
         f"{API_ROOT}/target-gps",
         f"{API_ROOT}/shortest-path",
     ],
-    "toilet_box": ["https://demo.goattl.net/esp32/audio_download"],
     "sound_snapshot": [
         f"{API_ROOT}/sound-snapshot",
+    ],
+    "toilet_box": [
+        f"{API_ROOT}/audio-count",
+        f"{API_ROOT}/audio-download",
+        f"{API_ROOT}/check-poo",
+        f"{API_ROOT}/urgent-call",
     ]
 }
 

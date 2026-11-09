@@ -1,15 +1,20 @@
-print("import 相關模組...")
+print("import 系統模組...")
 from datetime import datetime
 import os
 import threading
 import queue
 from pathlib import Path
+
+print("import Flask 模組...")
+from flask import Flask, jsonify, request, render_template, abort, send_file
+
+print("import 電腦視覺模組...")
 import cv2
 import numpy as np
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request, render_template, abort, send_file
 from ultralytics import YOLO
 
+print("import LINE Messaging API 模組...")
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
@@ -30,6 +35,7 @@ from linebot.v3.webhooks import (
     AudioMessageContent,
 )
 
+print("import 自訂模組...")
 import network_helper
 from roadtrace.tracer import PathTracer
 print("import 完成")
@@ -52,14 +58,38 @@ road_tracer = PathTracer("./ai/best_models/車牌m(115_11_3)150次.pt")
 MODES = {"car", "poo", "mention", "upload", "agent"}
 user_modes = {}
 
+audio_files = [
+    "button-press",
+    "capture",
+    "uploading",
+    "try-again",
+    "poo-normal",
+    "poo-wet",
+    "poo-blood-dry",
+    "poo-blood-wet",
+    "poo-green",
+    "poo-white",
+    "flush",
+    "urgent-call",
+]
+
+poo_type_map = {
+    0: 2, # 血便 (乾)
+    1: 3, # 血便 (濕)
+    2: 4, # 綠便
+    3: 0, # 正常
+    4: 1, # 拉肚子
+    5: 5, # 白便
+}
+
 print("正在載入 YOLO 模型 ...")
 car_model = YOLO("./ai/yolo/YOLO26s.pt")
-poo_model = YOLO("./ai/yolo/便便n(10_27)100次.pt")
+poo_model = YOLO("./ai/best_models/便便n(1105)200次.pt")
 print("載入完畢")
 
 def display_images(detect_objects: bool):
     print("正在載入 queue 使用的 YOLO...")
-    model = YOLO("./ai/yolo/YOLO26s.pt") if detect_objects else None
+    model = YOLO("./ai/best_models/便便n(1105)200次.pt") if detect_objects else None
     print("載入完畢")
 
     try:
@@ -175,8 +205,6 @@ def webhook():
         abort(400)
 
     return "OK", 200
-
-
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_text_message(event):
@@ -351,12 +379,33 @@ def notify():
 
     return {"status": "sent"}
 
-@app.route("/esp32/audio_download", methods=["GET"])
+@app.route("/esp32/audio-count", methods=["GET"])
+def audio_count():
+    return str(len(audio_files)), 200
+
+@app.route("/esp32/audio-download", methods=["GET"])
 def audio_download():
+    index = request.args.get("index")
+    filename = f"./static/audio/{audio_files[int(index)]}.wav"
     return send_file(
-        "./static/audio/sample_audio.wav",
+        filename,
         mimetype="audio/wav"
     )
+
+@app.route("/esp32/check-poo", methods=["POST"])
+def check_poo():
+    byte_data = request.get_data()
+    print(f"收到便便照片, 資料大小: {len(byte_data)} bytes")
+
+    image_array = np.frombuffer(byte_data, dtype=np.uint8)
+    image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+    results = poo_model.predict(image, verbose=False)
+    result = results[0]
+    class_id = int(result.boxes[0].cls[0]) if len(result.boxes) > 0 else -1
+    class_name = result.names[class_id] if class_id != -1 else "未偵測到便便"
+    print(f"便便類型: {class_name} (class_id: {class_id})")
+    return str(class_id), 200
+
 
 if __name__ == "__main__":
     flask_thread = threading.Thread(
