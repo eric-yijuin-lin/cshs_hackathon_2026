@@ -18,11 +18,14 @@ class LanguageConverter:
         self.request_transcription(lang, speaker_count)
         return self.get_transcription_result()
 
-    def text_to_audio(self, text: str, lang: str) -> None:
+    def text_to_audio(self, text: str, lang: str, save_name: str = None) -> None:
         result = self.request_tts(lang, text)
         base64_audio = result.get('audioContent', '')
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        self.save_audio_file(base64_audio, f"output_{timestamp}.wav")
+        if not save_name:
+            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            save_name = f"output_{timestamp}.wav"
+        print(f"文字轉語音完成，將音檔儲存為: {save_name}")
+        self.save_audio_file(base64_audio, save_name)
 
     def upload_audio(self, file_path: str) -> dict:
         print(f"Uploading audio file: {file_path}")

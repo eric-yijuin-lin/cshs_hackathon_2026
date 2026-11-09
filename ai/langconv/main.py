@@ -14,5 +14,5 @@ converter = LanguageConverter(api_key=API_KEY)
 # print("語音轉文字結果:", result)
 
 # ============= 測試文字轉語音 ==============
-text = "今天天氣真好，我要出去玩"
-converter.text_to_audio(text=text, lang="中台")
+text = "稍等一下，我再試一次。"
+converter.text_to_audio(text=text, lang="中台", save_name="try-again.wav")
