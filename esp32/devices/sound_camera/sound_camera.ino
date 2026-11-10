@@ -3,10 +3,20 @@
 #include <networkHelper.h>
 #include <cameraSetup.h>
 #include <SoundLevel.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SH110X.h>
 
 #define SOUND_THRESHOLD 90.0
 
-char* deviceID = "Device-A";
+// OLED 螢幕相關設定
+#define SCL_PIN 14
+#define SDA_PIN 47
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_ADDR 0x3C
+
+String deviceID = "Device-A";
 
 NetworkConfig networkConfig;
 
@@ -18,33 +28,56 @@ SoundLevel sound(
   104.0 //offset_R
 );
 
+Adafruit_SH1106G display(
+    SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1
+);
+
 void setup() {
   Serial.begin(115200);
   Serial.print("wait 5 sec to avoid brown out.");
   delay(5000);
 
+  // 初始化 I2C
+  Wire.begin(SDA_PIN, SCL_PIN);
+  // 初始化 OLED
+  bool oled_ok = false;
   bool network_ok = true;
   bool camera_ok = true;
   bool sound_ok = true;
+  
+  // 初始化 OLED 螢幕
+  for (int i=0; i<10; i++) {
+    if (!display.begin(OLED_ADDR, true)) {
+      Serial.println("OLED init failed");
+    } else {
+      oled_ok = true;
+      break;
+    }
+  }
+  display.clearDisplay();
+  display.setTextColor(SH110X_WHITE);
 
+  // 初始化網路
   if (!initNetwork("sound_snapshot", networkConfig)) { // 連接 wifi
     Serial.println("Failed to initialize network.");
     network_ok = false;
   }
   delay(1000);
 
+  // 初始化相機
   if (!initCamera()) { 
     Serial.println("Failed to initialize camera.");
     camera_ok = false;
   }
   delay(1000);
 
+  // 初始化麥克風
   if (!sound.begin()) {
     Serial.println("Failed to initialize sound sensor.");
     sound_ok = false;
   }
 
-  if (network_ok && camera_ok && sound_ok) {
+  if (network_ok && camera_ok && sound_ok && oled_ok) {
     Serial.println("All devices initialized successfully.");
   } else {
     Serial.println("Initialization failed, restart after 10 seconds...");
@@ -62,6 +95,7 @@ void loop() {
     // 暫時只用左聲道的數據
     Serial.printf("Mic L SPL: %.1f\n", micL.dbSPL);
     Serial.printf("Mic L dBA: %.1f\n", micL.dBA);
+    displaySoundLevel(deviceID, micL.dbSPL);
     
     if (micL.dbSPL > SOUND_THRESHOLD) {
       Serial.println("Sound level exceeded threshold, capturing image...");
@@ -140,4 +174,24 @@ bool captureAndSendImage(NetworkConfig config, double soundLevel) {
     esp_camera_fb_return(fb);
 
     return httpCode >= 200 && httpCode < 300;
+}
+
+void displaySoundLevel(String device, double db) {
+  display.clearDisplay();
+  delay(100);
+
+  // 第一行文字
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.print("Device: ");
+  display.println(device);
+
+  // 第二行文字
+  display.setTextSize(2);
+  display.setCursor(0, 20);
+  display.print("dB: ");
+  display.println(db);
+
+  // 更新實體螢幕
+  display.display();
 }
