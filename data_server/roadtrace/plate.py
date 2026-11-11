@@ -15,17 +15,12 @@ class CarPlateManager:
                 "x": 100, 
                 "y": 200, 
                 "area": 'A', 
-                "violations": ["改管噪音", "偽造車牌", "通緝贓車"]
+                "violations": {
+                    "改館噪音": [],
+                    "偽造車牌": True,
+                    "通緝車輛": True
+                }
             },
-        }
-            
-    def insert_plate(self, plate_data: dict):
-        plate_number = plate_data["plate_number"]
-        self.plate_db[plate_number] = {
-            "x": plate_data["x"],
-            "y": plate_data["y"],
-            "area": plate_data["area"],
-            "violations": plate_data["violations"]
         }
 
     def get_plate_data(self, plate_number: str) -> dict:
@@ -44,18 +39,7 @@ class CarPlateManager:
                 "violations": []
             }
 
-    def update_area(self, plate_number: str, area: str) -> None:
-        self.ensure_plate_exits(plate_number)
-        self.plate_db[plate_number]["area"] = area
-
-    def recognize_plates(self, img_bytes) -> list:
-        yolo_results = self.detect_plates(img_bytes)
-        if not yolo_results:
-            return []
-        
-        annotated_image = yolo_results[0].plot()
-        cv2.imwrite("result.jpg", annotated_image)
-        
+    def recognize_plates(self, yolo_results) -> list:
         ocr_results = []
         for result in yolo_results:
             # YOLO 原始影像，型別是 numpy.ndarray
@@ -101,3 +85,32 @@ class CarPlateManager:
             print("No plate detected")
             return None
         return results
+
+    def update_violation(self, plate_number: str, violation: str) -> None:
+        record = self.plate_db[plate_number]
+
+        if "分貝" in violation:
+            record["violations"]["改館噪音"].append(violation)
+        elif "偽造" in violation:
+            record["violations"]["偽造"] = True
+        elif "通緝" in violation:
+            record["violations"]["wanted"] = True
+
+    def save_violation_image(self, plate_number: str, yolo_results) -> None:
+        annotated_image = yolo_results[0].plot()
+        violations = self.plate_db[plate_number]["violations"]
+
+        if violations:
+        for noise_violation in violations["改館噪音"]:
+            cv2.putText(
+                annotated_image,
+                noise_violation,            # 文字內容
+                (20, 20 + text_row * 40),   # 文字位置 (x, y)
+                cv2.FONT_HERSHEY_SIMPLEX,   # 字型
+                1,                          # 字體大小
+                (0, 255, 0),                # 顏色 (B, G, R)，綠色
+                2,                          # 線條粗細
+                cv2.LINE_AA                 # 抗鋸齒
+            )
+            text_row += 1
+        cv2.imwrite("result.jpg", annotated_image)
