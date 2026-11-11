@@ -3,14 +3,10 @@
 
 #include <Arduino.h>
 
-// 取得音檔數量，API 直接回傳整數，失敗回傳 -1
-int getWavFileCount(String url);
-
-// 下載指定 index 的 WAV 至 PSRAM；不清除其他已下載音檔
-bool downloadWAV(String url, int index);
+bool loadWavFromSD();
 
 // 播放已下載的 WAV
-bool playWAV(int index);
+bool playWAV(String filename);
 
 // 釋放 WAV 緩衝區
 void releaseWAV();

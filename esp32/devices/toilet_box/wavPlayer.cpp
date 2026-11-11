@@ -6,11 +6,33 @@
 #include <HTTPClient.h>
 #include <ESP_I2S.h>
 #include <esp_heap_caps.h>
+#include "FS.h"
+#include "SD_MMC.h"
 
 // I2S 腳位
 #define I2S_BCLK 41
 #define I2S_LRC  42
 #define I2S_DOUT 21
+
+// SD 卡腳位
+#define SD_CMD 38
+#define SD_CLK 39
+#define SD_D0  40
+
+String wavFileNames[] = {
+    "button-press",
+    "capture",
+    "uploading",
+    "try-again",
+    "poo-normal",
+    "poo-wet",
+    "poo-blood-dry",
+    "poo-blood-wet",
+    "poo-green",
+    "poo-white",
+    "flush",
+    "urgent-call",
+};
 
 // 下載設定
 static constexpr uint32_t DOWNLOAD_IDLE_TIMEOUT = 10000;
@@ -23,8 +45,8 @@ struct WavData {
   size_t size;
 };
 
-// index -> WAV 資料；每個音檔獨立存放於 PSRAM
-static std::map<int, WavData> wavFiles;
+// filename -> WAV 資料；每個音檔獨立存放於 PSRAM
+static std::map<String, WavData> wavFiles;
 
 // 共用 HTTP GET 初始化與狀態檢查（僅支援內網 HTTP）
 static bool startHttpGet(HTTPClient& http, WiFiClient& client, const String& url) {
@@ -78,135 +100,6 @@ void releaseWAV() {
   wavFiles.clear();
 }
 
-// 取得音檔數量，API 直接回傳整數
-// 失敗回傳 -1
-int getWavFileCount(String url) {
-  WiFiClient client;
-  HTTPClient http;
-
-  if (!startHttpGet(http, client, url)) return -1;
-
-  String response = http.getString();
-  http.end();
-  response.trim();
-
-  // 確認回傳內容為非負整數
-  if (response.isEmpty()) return -1;
-
-  for (size_t i = 0; i < response.length(); i++) {
-    if (!isDigit(response[i])) {
-      Serial.println("Invalid WAV count!");
-      return -1;
-    }
-  }
-
-  long count = response.toInt();
-  if (count < 0 || count > INT_MAX) return -1;
-
-  Serial.printf("WAV file count: %ld\n", count);
-  return (int)count;
-}
-
-// 下載指定 index 的 WAV 至 PSRAM；不清除其他已下載音檔
-bool downloadWAV(String url, int index) {
-  if (index < 0) {
-    Serial.println("Invalid WAV index!");
-    return false;
-  }
-
-  if (!psramFound()) {
-    Serial.println("PSRAM not found!");
-    return false;
-  }
-
-  // 原始 URL 已有 query 時使用 &，否則使用 ?
-  url += (url.indexOf('?') >= 0 ? "&index=" : "?index=");
-  url += String(index);
-
-  WiFiClient client;
-  HTTPClient http;
-  if (!startHttpGet(http, client, url)) return false;
-
-  int length = http.getSize();
-  if (length <= 44) {
-    Serial.println("Invalid WAV length (Content-Length required)!");
-    http.end();
-    return false;
-  }
-
-  Serial.printf("Downloading %s\n", url.c_str());
-  Serial.printf("total %d bytes...\n", length);
-
-  uint8_t* buffer = (uint8_t*)heap_caps_malloc(
-    (size_t)length, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
-  );
-  if (buffer == nullptr) {
-    Serial.println("PSRAM allocation failed!");
-    http.end();
-    return false;
-  }
-
-  WiFiClient* stream = http.getStreamPtr();
-  size_t received = 0;
-  unsigned long lastDataTime = millis();
-
-  while (received < (size_t)length) {
-    int availableBytes = stream->available();
-
-    if (availableBytes > 0) {
-      size_t remaining = (size_t)length - received;
-      size_t chunk = min(
-        (size_t)availableBytes,
-        min(DOWNLOAD_CHUNK_SIZE, remaining)
-      );
-
-      size_t n = stream->readBytes(buffer + received, chunk);
-      if (n > 0) {
-        received += n;
-        lastDataTime = millis();
-      }
-    }
-
-    if (!stream->connected() && stream->available() == 0) {
-      Serial.println("Connection closed!");
-      break;
-    }
-
-    if (millis() - lastDataTime > DOWNLOAD_IDLE_TIMEOUT) {
-      Serial.println("Download timeout!");
-      break;
-    }
-    delay(1);
-  }
-
-  http.end();
-  Serial.printf("Received: %u / %d bytes\n", (unsigned)received, length);
-
-  if (received != (size_t)length) {
-    Serial.println("Incomplete download!");
-    free(buffer);
-    return false;
-  }
-
-  if (memcmp(buffer, "RIFF", 4) != 0 ||
-      memcmp(buffer + 8, "WAVE", 4) != 0) {
-    Serial.println("Invalid WAV file!");
-    free(buffer);
-    return false;
-  }
-
-  // 同一 index 重新下載時，只取代該筆；其他 index 保留
-  auto existing = wavFiles.find(index);
-  if (existing != wavFiles.end()) {
-    free(existing->second.buffer);
-    existing->second = {buffer, received};
-  } else {
-    wavFiles.emplace(index, WavData{buffer, received});
-  }
-
-  Serial.printf("WAV [%d] downloaded to PSRAM!\n", index);
-  return true;
-}
 
 // 將完整資料寫入 I2S
 static bool writeI2S(const uint8_t* data, size_t size) {
@@ -226,14 +119,75 @@ static bool writeI2S(const uint8_t* data, size_t size) {
   return true;
 }
 
-// 播放 WAV
-// 根據 index 播放已下載的 WAV
-bool playWAV(int index) {
-  auto it = wavFiles.find(index);
-  if (it == wavFiles.end() || it->second.buffer == nullptr || it->second.size < 44) {
-    Serial.printf("WAV [%d] not loaded!\n", index);
+bool loadWavFromSD() {
+  if (!SD_MMC.setPins(SD_CLK, SD_CMD, SD_D0)) {
+    Serial.println("SD pin setup failed!");
     return false;
   }
+
+  if (!SD_MMC.begin("/sdcard", true)) {
+    Serial.println("SD card mount failed!");
+    return false;
+  }
+
+  for (const String& filename : wavFileNames) {
+    String fullname = "/" + filename + ".wav";
+    File file = SD_MMC.open(fullname, FILE_READ);
+
+    if (!file) {
+      Serial.printf("Failed to open %s\n", fullname.c_str());
+      return false;
+    }
+
+    size_t fileSize = file.size();
+    if (fileSize == 0) {
+      Serial.printf("Empty file: %s\n", fullname.c_str());
+      file.close();
+      return false;
+    }
+
+    uint8_t* buffer = (uint8_t*)malloc(fileSize);
+
+    if (!buffer) {
+      Serial.printf("Memory allocation failed: %s\n", fullname.c_str());
+      file.close();
+      return false;
+    }
+
+    size_t bytesRead = file.read(buffer, fileSize);
+    file.close();
+
+    if (bytesRead != fileSize) {
+      Serial.printf("Failed to read %s\n", fullname.c_str());
+      free(buffer);
+      return false;
+    }
+
+    // 如果重複載入同名檔案，先釋放舊資料
+    auto it = wavFiles.find(filename);
+    if (it != wavFiles.end()) {
+      free(it->second.buffer);
+    }
+
+    wavFiles[filename] = {buffer, fileSize};
+
+    Serial.printf("Loaded %s (%u bytes)\n",
+      fullname.c_str(), (unsigned)fileSize);
+  }
+
+  return true;
+}
+
+// 播放 WAV
+// 根據 filename 播放已下載的 WAV
+bool playWAV(String filename) {
+  Serial.printf("Finding %s in map...", filename);
+  auto it = wavFiles.find(filename);
+  if (it == wavFiles.end() || it->second.buffer == nullptr || it->second.size < 44) {
+    Serial.printf("WAV [%s] not loaded!\n", filename);
+    return false;
+  }
+  Serial.printf("Wav file %s found in map.", filename);
 
   const uint8_t* wavBuffer = it->second.buffer;
   const size_t wavSize = it->second.size;

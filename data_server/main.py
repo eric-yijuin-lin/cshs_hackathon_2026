@@ -74,12 +74,13 @@ audio_files = [
 ]
 
 poo_type_map = {
-    0: 2, # 血便 (乾)
-    1: 3, # 血便 (濕)
-    2: 4, # 綠便
-    3: 0, # 正常
-    4: 1, # 拉肚子
-    5: 5, # 白便
+    -1: "unknown",
+    0: "poo-blood-dry",
+    1: "poo-blood-wet",
+    2: "poo-green",
+    3: "poo-normal",
+    4: "poo-wet",
+    5: "poo-white",
 }
 
 print("正在載入 YOLO 模型 ...")
@@ -407,7 +408,7 @@ def check_poo():
     class_id = int(result.boxes[0].cls[0]) if len(result.boxes) > 0 else -1
     class_name = result.names[class_id] if class_id != -1 else "未偵測到便便"
     print(f"便便類型: {class_name} (class_id: {class_id})")
-    return str(class_id), 200
+    return poo_type_map[class_id], 200
 
 @app.route("/esp32/urgent-call", methods=["GET"])
 def urgent_call():

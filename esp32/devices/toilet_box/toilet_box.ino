@@ -25,12 +25,17 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   
+  bool wav_ok = true;
   bool network_ok = true;
   bool camera_ok = true;
-  bool wav_ok = true;
 
   pinMode(CAPTURE_BUTTON_PIN, INPUT);
   pinMode(URGENT_BUTTON_PIN,  INPUT);
+  
+  if (!loadWavFromSD()) {
+    Serial.println("Failed to load wav files from SD card!");
+    wav_ok = false;
+  }
 
   if (!initNetwork("toilet_box", networkConfig)) { // 連接 wifi
     Serial.println("Failed to initialize network.");
@@ -48,13 +53,8 @@ void setup() {
   wavDownloadUrl = networkConfig.api_urls[1];
   checkPooUrl = networkConfig.api_urls[2];
   urgentCallUrl = networkConfig.api_urls[3];
-
-  if (!downloadAllWav()) {
-    Serial.println("Failed to download WAV files, restart after 5 seconds.");
-    wav_ok = false;
-  }
   
-  if (network_ok && camera_ok && wav_ok) {
+  if (wav_ok && network_ok && camera_ok) {
     Serial.println("All devices initialized successfully.");
   } else {
     Serial.println("Initialization failed, restart after 10 seconds...");
@@ -73,33 +73,33 @@ void loop() {
   // Serial.println(urgentState);
 
   if (captureState == HIGH) {
-    playWAV(0); // 播放第一個音檔 (button-press)
-    delay(3000);
+    playWAV("button-press");
 
-    int pooType = -1;
-    while (pooType < 0) {
-      playWAV(1); // 播放第二個音檔 (capture)
+    String pooType = "unknown";
+    while (pooType == "unknown") {
+      playWAV("capture");
       delay(1000);
 
-      playWAV(2); // 播放第三個音檔 (uploading)
+      playWAV("uploading");
       delay(1000);
 
       pooType = checkPoo(); // 拍照並上傳便便，取得類型
-      if (pooType < 0) {
-        playWAV(3); // 播放第四個音檔 (try-again)
+      Serial.printf("Poo checking finished, type: %s\n", pooType);
+      if (pooType == "unknown") {
+        playWAV("try-again");
         delay(1000);
       }
     }
 
-    playWAV(pooType + WAV_FILE_SHIFT); // 播放對應的便便音檔
+    playWAV(pooType); // 播放對應的便便音檔
     delay(1000);
 
-    playWAV(10); // 播放第十個音檔 (flush)
+    playWAV("flush");
     delay(1000);
   } else if (urgentState == HIGH) {
     Serial.println("urgentState == HIGH");
     if (urgentCall()) {
-      playWAV(11); // 播放第 12 個音檔 (urgent-call)
+      playWAV("urgent-call");
       delay(1000);
     }
   }
@@ -107,23 +107,7 @@ void loop() {
   delay(100);
 }
 
-bool downloadAllWav() {
-  int wavCount = getWavFileCount(wavCountUrl);
-  if (wavCount < 0) {
-    Serial.println("Failed to get WAV file count");
-    return false;
-  }
-
-  for (int i = 0; i < wavCount; i++) {
-    if (!downloadWAV(wavDownloadUrl, i)) {
-      Serial.printf("Failed to download WAV [%d]\n", i);
-      return false;
-    }
-  }
-  return true;
-}
-
-int checkPoo() {
+String checkPoo() {
     // 1. 拍照
     unsigned long captureStart = millis();
 
@@ -131,7 +115,7 @@ int checkPoo() {
 
     if (!fb) {
         Serial.println("Camera capture failed");
-        return -1;
+        return "unknown";
     }
 
     unsigned long captureTime = millis() - captureStart;
@@ -144,7 +128,7 @@ int checkPoo() {
     if (fb->format != PIXFORMAT_JPEG) {
         Serial.println("Captured image is not JPEG");
         esp_camera_fb_return(fb);
-        return -1;
+        return "unknown";
     }
 
     // 2. 建立 HTTP Client
@@ -155,7 +139,7 @@ int checkPoo() {
     if (!http.begin(client, checkPooUrl)) {
         Serial.println("HTTP begin failed");
         esp_camera_fb_return(fb);
-        return -1;
+        return "unknown";
     }
 
     // 3. 告訴 Server：Body 就是一張 JPEG
@@ -170,13 +154,13 @@ int checkPoo() {
     unsigned long uploadTime = millis() - uploadStart;
 
     // 5. 檢查結果
-    int pooType = -1;
+    String pooType = "unknown";
     if (httpCode > 0) {
         Serial.printf("HTTP response: %d\n", httpCode);
         Serial.printf("Upload time: %lu ms\n", uploadTime);
 
-        pooType = http.getString().toInt();
-        Serial.printf("Server response: %d\n", pooType);
+        pooType = http.getString();
+        Serial.printf("Server response: %s\n", pooType);
     }
     else {
         Serial.printf(
