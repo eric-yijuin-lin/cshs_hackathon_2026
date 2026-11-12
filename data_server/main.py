@@ -458,6 +458,27 @@ def urgent_call():
 
     return jsonify({"status": "success"}), 200
 
+@app.route("/esp32/csi-radar", methods=["POST"])
+def receive_motion():
+    data = request.get_json()
+
+    if not data:
+        return jsonify({
+            "success": False,
+            "message": "No JSON data received"
+        }), 400
+
+    someone = data.get("someone")
+    motion = data.get("motion")
+    timestamp = data.get("timestamp")
+
+    print(f"CSI detected: someone: {someone}    motion:{motion}    timestamp: {timestamp}")
+
+    return jsonify({
+        "success": True,
+        "message": "Motion event received"
+    }), 200
+
 if __name__ == "__main__":
     flask_thread = threading.Thread(
         target=lambda: app.run(
