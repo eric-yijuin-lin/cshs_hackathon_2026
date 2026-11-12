@@ -80,10 +80,10 @@ void loop() {
       playWAV("capture");
       delay(1000);
 
+      pooType = checkPoo(); // 拍照並上傳便便，取得類型
       playWAV("uploading");
       delay(1000);
 
-      pooType = checkPoo(); // 拍照並上傳便便，取得類型
       Serial.printf("Poo checking finished, type: %s\n", pooType);
       if (pooType == "unknown") {
         playWAV("try-again");

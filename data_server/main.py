@@ -76,21 +76,21 @@ audio_files = [
 poo_type_map = {
     -1: "unknown",
     0: "poo-blood-dry",
-    1: "poo-blood-wet",
+    1: "poo-wet",
     2: "poo-green",
-    3: "poo-normal",
-    4: "poo-wet",
-    5: "poo-white",
+    3: "poo-blood-wet",
+    4: "poo-white",
+    5: "poo-normal",
 }
 
 print("正在載入 YOLO 模型 ...")
 car_model = YOLO("./ai/yolo/YOLO26s.pt")
-poo_model = YOLO("./ai/best_models/便便n(1105)200次.pt")
+poo_model = YOLO("./ai/best_models/(2026_11_9)便便s150次.pt")
 print("載入完畢")
 
 def display_images(detect_objects: bool):
     print("正在載入 queue 使用的 YOLO...")
-    model = YOLO("./ai/best_models/便便n(1105)200次.pt") if detect_objects else None
+    model = YOLO("./ai/best_models/(2026_11_9)便便s150次.pt") if detect_objects else None
     print("載入完畢")
 
     try:
@@ -401,6 +401,8 @@ def check_poo():
     device_id = request.headers.get("X-Device-ID")
     byte_data = request.get_data()
     print(f"收到便便照片, device_id: {device_id}, 資料大小: {len(byte_data)} bytes")
+    
+    image_queue.put(byte_data, timeout=1)
 
     image_array = np.frombuffer(byte_data, dtype=np.uint8)
     image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
