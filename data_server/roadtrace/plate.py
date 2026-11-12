@@ -16,7 +16,7 @@ class CarPlateManager:
                 "y": 200, 
                 "area": 'A', 
                 "violations": {
-                    "改館噪音": [],
+                    "改管噪音": [],
                     "偽造車牌": True,
                     "通緝車輛": True
                 }
@@ -36,7 +36,11 @@ class CarPlateManager:
                 "x": position[0], 
                 "y": position[1], 
                 "area":area, 
-                "violations": []
+                "violations": {
+                    "改管噪音": [],
+                    "偽造車牌": False,
+                    "通緝車輛": False
+                }
             }
 
     def recognize_plates(self, yolo_results) -> list:
@@ -90,7 +94,7 @@ class CarPlateManager:
         record = self.plate_db[plate_number]
 
         if "分貝" in violation:
-            record["violations"]["改館噪音"].append(violation)
+            record["violations"]["改管噪音"].append(violation)
         elif "偽造" in violation:
             record["violations"]["偽造"] = True
         elif "通緝" in violation:
@@ -101,16 +105,19 @@ class CarPlateManager:
         violations = self.plate_db[plate_number]["violations"]
 
         if violations:
-        for noise_violation in violations["改館噪音"]:
-            cv2.putText(
-                annotated_image,
-                noise_violation,            # 文字內容
-                (20, 20 + text_row * 40),   # 文字位置 (x, y)
-                cv2.FONT_HERSHEY_SIMPLEX,   # 字型
-                1,                          # 字體大小
-                (0, 255, 0),                # 顏色 (B, G, R)，綠色
-                2,                          # 線條粗細
-                cv2.LINE_AA                 # 抗鋸齒
-            )
-            text_row += 1
-        cv2.imwrite("result.jpg", annotated_image)
+            text_y = 40
+            for key, value in violations.items():
+                text = f"{key}: {value}"
+                cv2.putText(
+                    annotated_image,
+                    text,                       # 文字內容
+                    (20, text_y),   # 文字位置 (x, y)
+                    cv2.FONT_HERSHEY_SIMPLEX,   # 字型
+                    1,                          # 字體大小
+                    (0, 0, 255),                # 顏色 (B, G, R)，綠色
+                    2,                          # 線條粗細
+                    cv2.LINE_AA                 # 抗鋸齒
+                )
+                text_y += 30
+            
+        cv2.imwrite(f"./data_server/roadtrace/violation_images/{plate_number}.jpg", annotated_image)

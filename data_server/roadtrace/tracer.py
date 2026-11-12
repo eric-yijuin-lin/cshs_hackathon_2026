@@ -6,7 +6,7 @@ class PathTracer:
         self.plate_manager = CarPlateManager(model_path)
         self.path_manager = RoadPathManager()
 
-    def trace_plate(self, device_id: str, violation, img_bytes: list):
+    def trace_plate(self, device_id: str, violation: str, img_bytes: list):
         area = self.path_manager.get_device_area(device_id)
         if not area:
             raise ValueError(f"找不到對應的區域，device_id = {device_id}")
@@ -16,7 +16,7 @@ class PathTracer:
             print("沒有偵測到車牌")
             return
 
-        ocr_results = self.plate_manager.recognize_plates(img_bytes)
+        ocr_results = self.plate_manager.recognize_plates(yolo_results)
         if not ocr_results:
             print("無法辨識車牌")
             return
@@ -30,3 +30,4 @@ class PathTracer:
 
             self.plate_manager.upsert_plate_location(plate_number, position, area)
             self.plate_manager.update_violation(plate_number, violation)
+            self.plate_manager.save_violation_image(plate_number, yolo_results)

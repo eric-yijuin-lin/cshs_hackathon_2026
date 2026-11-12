@@ -181,7 +181,8 @@ def sound_snapshot():
     print(f"偵測到聲音快照，裝置ID: {device_id}, 聲音分貝: {sound_level}, 資料大小: {len(byte_data)} bytes")
 
     try:
-        road_tracer.trace_plate(device_id, byte_data)
+        violation = f"{sound_level} 分貝"
+        road_tracer.trace_plate(device_id, violation, byte_data)
         return "ok"
     except Exception as e:
         print("Error:", e)
