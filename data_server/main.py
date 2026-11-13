@@ -3,6 +3,7 @@ from datetime import datetime
 import os
 import threading
 import queue
+import time
 from pathlib import Path
 
 print("import Flask 模組...")
@@ -38,9 +39,11 @@ from linebot.v3.webhooks import (
 print("import 自訂模組...")
 import network_helper
 from roadtrace.tracer import PathTracer
+from toiletbox.toilet_status import ToiletStateMachine, ToiletAlert
 print("import 完成")
 
 load_dotenv()
+debug_count = 0
 
 app = Flask(__name__)
 
@@ -54,6 +57,9 @@ handler = WebhookHandler(
 
 image_queue = queue.Queue(maxsize=2)
 road_tracer = PathTracer("./ai/best_models/車牌m(115_11_3)150次.pt")
+
+state_machine = ToiletStateMachine()
+
 
 MODES = {"car", "poo", "mention", "upload", "agent", "debug"}
 user_modes = {}
@@ -459,7 +465,7 @@ def urgent_call():
     return jsonify({"status": "success"}), 200
 
 @app.route("/esp32/csi-radar", methods=["POST"])
-def receive_motion():
+def receive_csi_radar():
     data = request.get_json()
 
     if not data:
@@ -470,14 +476,32 @@ def receive_motion():
 
     someone = data.get("someone")
     motion = data.get("motion")
-    timestamp = data.get("timestamp")
+    iso_time = data.get("timestamp")
 
-    print(f"CSI detected: someone: {someone}    motion:{motion}    timestamp: {timestamp}")
+    # print(f"CSI detected: someone: {someone}    motion:{motion}    timestamp: {timestamp}")
+    timestamp = datetime.fromisoformat(iso_time)
+    state_machine.update(someone, motion, timestamp)
+    print("CSI state: ", state_machine.status)
 
     return jsonify({
         "success": True,
         "message": "Motion event received"
     }), 200
+
+def alert_worker():
+    while True:
+        alerts = state_machine.get_alerts()
+
+        for alert in alerts:
+            if alert == ToiletAlert.FAST_EXIT:
+                # global debug_count
+                # debug_count += 1
+                print(f"[ALERT] \n\n\n FAST_EXIT {debug_count} \n\n\n")
+
+            elif alert == ToiletAlert.LONG_STATIC:
+                print("[ALERT] ======== LONG_STATIC ===========")
+
+        time.sleep(0.2)
 
 if __name__ == "__main__":
     flask_thread = threading.Thread(
@@ -490,5 +514,11 @@ if __name__ == "__main__":
         daemon=True
     )
     flask_thread.start()
+    
+    alert_thread = threading.Thread(
+        target=alert_worker,
+        daemon=True
+    )
+    alert_thread.start()
 
     display_images(detect_objects=True)
