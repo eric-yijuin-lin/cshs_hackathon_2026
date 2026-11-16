@@ -12,8 +12,8 @@ const int URGENT_BUTTON_PIN = 47;
 const int WAV_FILE_SHIFT = 4; // 便便類型的位移量，對應音檔索引
 
 
-int captureState = LOW;
-int urgentState = LOW;
+int captureState = HIGH;
+int urgentState = HIGH;
 
 String deviceID = "toilet_1"; // 設備 ID
 String wavCountUrl; // 取得音檔數量
@@ -71,8 +71,9 @@ void loop() {
   // Serial.println(captureState);
   // Serial.print("urgentState: ");
   // Serial.println(urgentState);
+  // delay(1000);
 
-  if (captureState == HIGH) {
+  if (captureState == LOW) {
     playWAV("button-press");
 
     String pooType = "unknown";
@@ -96,7 +97,7 @@ void loop() {
 
     playWAV("flush");
     delay(1000);
-  } else if (urgentState == HIGH) {
+  } else if (urgentState == LOW) {
     Serial.println("urgentState == HIGH");
     if (urgentCall()) {
       playWAV("urgent-call");
