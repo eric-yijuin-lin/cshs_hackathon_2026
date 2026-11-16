@@ -6,6 +6,7 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
+#include <Bounce2.h>
 
 #define SOUND_THRESHOLD 90.0
 
@@ -16,7 +17,13 @@
 #define SCREEN_HEIGHT 64
 #define OLED_ADDR 0x3C
 
-String deviceID = "Device-A";
+// 按鈕相關設定
+#define AREA_BUTTON 2
+Bounce button = Bounce();
+int areaButtonState = HIGH;
+int device_index = 3; // 
+String devicePrefix = "Device-";
+String deviceID = "Device-D";
 
 NetworkConfig networkConfig;
 
@@ -44,6 +51,10 @@ void setup() {
   bool network_ok = true;
   bool camera_ok = true;
   bool sound_ok = true;
+  
+  // 初始化按鈕
+  button.attach(AREA_BUTTON, INPUT);
+  button.interval(50);
   
   // 初始化 OLED 螢幕
   for (int i=0; i<10; i++) {
@@ -87,6 +98,11 @@ void setup() {
 }
 
 void loop() {
+    button.update();
+    if (button.fell()) {
+        switchArea();
+    }
+  
   // Serial.println("TEST");
   // delay(1000);
   SoundReading micL, micR;
@@ -102,6 +118,14 @@ void loop() {
       captureAndSendImage(networkConfig, micL.dbSPL);
     }
   }
+}
+
+void switchArea() {
+    Serial.printf("switching from %d", device_index);
+    device_index++;
+    device_index = (device_index % 8);
+    Serial.printf("to %d", device_index);
+    deviceID = devicePrefix + char(device_index + 65);
 }
 
 bool captureAndSendImage(NetworkConfig config, double soundLevel) {

@@ -189,6 +189,10 @@ def sound_snapshot():
     try:
         violation = f"{sound_level} 分貝"
         road_tracer.trace_plate(device_id, violation, byte_data)
+
+        police_area = "A"
+        best_path = road_tracer.get_best_path(police_area, device_id)
+        print(f"請求警車到場，最佳路徑: {best_path}")
         return "ok"
     except Exception as e:
         print("Error:", e)
@@ -414,6 +418,7 @@ def check_poo():
     image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
     results = poo_model.predict(image, verbose=False)
     result = results[0]
+    
     class_id = int(result.boxes[0].cls[0]) if len(result.boxes) > 0 else -1
     class_name = result.names[class_id] if class_id != -1 else "未偵測到便便"
     print(f"便便類型: {class_name} (class_id: {class_id})")

@@ -31,3 +31,8 @@ class PathTracer:
             self.plate_manager.upsert_plate_location(plate_number, position, area)
             self.plate_manager.update_violation(plate_number, violation)
             self.plate_manager.save_violation_image(plate_number, yolo_results)
+
+    def get_best_path(self, police_area: str, trigger_device: str) -> list:
+        target_area = self.path_manager.get_device_area(trigger_device)
+        best_path = self.path_manager.get_trace_nodes(police_area, target_area)
+        return best_path

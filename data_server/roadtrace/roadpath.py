@@ -65,7 +65,7 @@ class RoadPathManager:
             raise ValueError(f"找不到 id = {node_id} 的節點")
         return node["label"]
 
-    def get_trace_data(self, start: str, end: str) -> dict:
+    def get_trace_nodes(self, start: str, end: str) -> list:
         path = nx.dijkstra_path(self.graph, source=start, target=end)
 
         trace_data = []
