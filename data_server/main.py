@@ -190,13 +190,22 @@ def sound_snapshot():
         violation = f"{sound_level} 分貝"
         road_tracer.trace_plate(device_id, violation, byte_data)
 
-        police_area = "A"
-        best_path = road_tracer.get_best_path(police_area, device_id)
-        print(f"請求警車到場，最佳路徑: {best_path}")
-        return "ok"
+        police_area = "G" # 真正應用要搜尋最近警車，但先假設警車都在 A 區
+        road_tracer.set_best_path(police_area, device_id)
+        best_path = road_tracer.get_best_path(police_area) # debug use
+        print(f"(儲存最佳路徑) 警車區域: {police_area}    最佳路徑: {best_path}")
+        return "ok", 200
     except Exception as e:
         print("Error:", e)
         return "error", 500
+
+@app.route("/esp32/best-path", methods=["GET"])
+def get_best_path():
+    police_area = request.args.get("police", "G")
+    best_path = road_tracer.get_best_path(police_area)
+    print(f"請求 {police_area} 區域警車支援，最佳路徑: {best_path}")
+    return best_path, 200
+    
 
 @app.route("/esp32/plate-debug", methods=["GET"])
 def plate_debug():

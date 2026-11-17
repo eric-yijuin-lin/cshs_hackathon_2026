@@ -155,7 +155,7 @@ bool captureAndSendImage(NetworkConfig config, double soundLevel) {
     // 2. 建立 HTTP Client
     WiFiClient client;
     HTTPClient http;
-    String uploadUrl = networkConfig.api_urls[0]; // purpose 為 img_inference，使用 api_urls[0] 作為上傳 URL
+    String uploadUrl = networkConfig.api_urls[0]; // purpose 為 sound_snapshot api_urls[0] 作為上傳 URL
 
     Serial.printf("Uploading to: %s\n", uploadUrl.c_str());
     if (!http.begin(client, uploadUrl)) {

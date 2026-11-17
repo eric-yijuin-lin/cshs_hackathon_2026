@@ -5,6 +5,7 @@ class PathTracer:
     def __init__(self, model_path: str):
         self.plate_manager = CarPlateManager(model_path)
         self.path_manager = RoadPathManager()
+        self.best_paths = {}
 
     def trace_plate(self, device_id: str, violation: str, img_bytes: list):
         area = self.path_manager.get_device_area(device_id)
@@ -31,8 +32,11 @@ class PathTracer:
             self.plate_manager.upsert_plate_location(plate_number, position, area)
             self.plate_manager.update_violation(plate_number, violation)
             self.plate_manager.save_violation_image(plate_number, yolo_results)
-
-    def get_best_path(self, police_area: str, trigger_device: str) -> list:
+    
+    def set_best_path(self, police_area: str, trigger_device: str) -> None:
         target_area = self.path_manager.get_device_area(trigger_device)
         best_path = self.path_manager.get_trace_nodes(police_area, target_area)
-        return best_path
+        self.best_paths[police_area] = best_path
+
+    def get_best_path(self, police_area: str) -> list:
+        return self.best_paths.get(police_area, [])
