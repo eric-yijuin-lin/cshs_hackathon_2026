@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>人體偵測即時狀態</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #fff; color: #000; font-family: Arial, "Noto Sans TC", sans-serif; }
+    .dashboard {
+      min-height: 393px;
+      max-width: 900px;
+      display: grid;
+      grid-template-columns: 60% 40%;
+      grid-template-rows: 120px 150px 110px;
+      align-items: center;
+      padding: 0 18px;
+      font-size: clamp(22px, 4.2vw, 32px);
+      font-weight: 600;
+    }
+    .someone { grid-column: 1; grid-row: 1; align-self: start; margin-top: 44px; }
+    .motion  { grid-column: 1; grid-row: 2; }
+    .state   { grid-column: 1; grid-row: 3; }
+    .last_static   { grid-column: 1; grid-row: 4; }
+    .alarms { grid-column: 2; grid-row: 1 / 4; display: grid; grid-template-rows: 1fr 1fr; align-self: stretch; justify-items: center; text-align: center; }
+    .alarm { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+    .alarm h2 { font-size: clamp(20px, 3vw, 28px); margin: 0; }
+    .alarm-icon { font-size: clamp(58px, 9vw, 95px); line-height: 1.1; }
+    [hidden] { display: none !important; }
+    @media (max-width: 480px) {
+      .dashboard { padding: 0 14px; grid-template-columns: 62% 38%; font-size: 22px; }
+      .alarm h2 { font-size: 20px; }
+      .alarm-icon { font-size: 58px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="dashboard" aria-label="即時偵測狀態">
+    <div class="someone">someone: <span id="someone">--</span></div>
+    <div class="motion">motion: <span id="motion">--</span></div>
+    <div class="state">State: <span id="state">--</span></div>
+    <div class="last_static">Last Static: <span id="last_static">--</span></div>
+    <section class="alarms" aria-label="警報狀態">
+      <div class="alarm" id="alarmA" hidden>
+        <h2>快速消失</h2>
+        <div class="alarm-icon" role="img" aria-label="alarmA 警報">🚨</div>
+      </div>
+      <div class="alarm" id="alarmB" hidden>
+        <h2>長時間靜止</h2>
+        <div class="alarm-icon" role="img" aria-label="alarmB 警報">⚠️</div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const REFRESH_MS = 500;
+
+    function asBoolean(value) {
+      return value === true || value === 1 || value === 'true' || value === '1';
+    }
+
+    async function updateStatus() {
+      try {
+        const response = await fetch('/esp32/csi-state', { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        console.log("debug", data);
+
+        // 相容舊 API 的 presence 與未來可能使用的 someone 欄位。
+        const someone = asBoolean(data.someone ?? data.presence);
+        const motion = asBoolean(data.motion);
+        const state = data.state;
+        const fast_empty = data.fast_empty;
+        const long_static = data.long_static;
+        const last_static = data.last_static;
+
+        state_text = ""
+        if (state === "static") {
+          state_text = "靜止";
+        } else if (state === "move") {
+          state_text = "移動";
+        } else if (state === "empty") {
+          state_text = "媒人";
+        } 
+
+        document.getElementById('someone').textContent = someone ? 'O' : 'X';
+        document.getElementById('motion').textContent = motion ? 'O' : 'X';
+        document.getElementById('state').textContent = state_text
+        document.getElementById('last_static').textContent = last_static;
+        document.getElementById('alarmA').hidden = !fast_empty;
+        document.getElementById('alarmB').hidden = !long_static;
+      } catch (error) {
+        console.error('無法取得偵測狀態：', error);
+        // 連線失敗時不把舊值誤認為最新值。
+        document.getElementById('someone').textContent = '--';
+        document.getElementById('motion').textContent = '--';
+        document.getElementById('state').textContent = '連線中斷';
+        document.getElementById('alarmA').hidden = true;
+        document.getElementById('alarmB').hidden = true;
+      } finally {
+        // 前一個請求結束後才安排下一次，避免請求堆積。
+        setTimeout(updateStatus, REFRESH_MS);
+      }
+    }
+    updateStatus();
+  </script>
+</body>
+</html>

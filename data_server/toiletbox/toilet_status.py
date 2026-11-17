@@ -1,168 +1,90 @@
-
-import threading
-from collections import deque
-from datetime import datetime, timedelta
-from enum import Enum, auto
+from enum import Enum
+from datetime import datetime
+from threading import RLock
 
 
-class ToiletState(Enum):
-    EMPTY = auto()
-    STATIC = auto()
-    MOVE = auto()
-
-
-class ToiletAlert(Enum):
-    FAST_EXIT = auto()
-    LONG_STATIC = auto()
+class State(str, Enum):
+    STATIC = "static"
+    MOVE = "move"
+    EMPTY = "empty"
 
 
 class ToiletStateMachine:
     def __init__(self):
-        self._status = ToiletState.EMPTY
+        self.state = State.EMPTY
 
-        # LONG_STATIC：目前這段連續 STATIC 的起點
-        self._static_started_at = None
+        self.FAST_EMPTY = False
+        self.LONG_STATIC = False
 
-        # FAST_EXIT：最近一次進入 STATIC 的時間
-        self._last_static_at = None
+        self.last_static: datetime | None = None
+        self.from_static = False
 
-        # EMPTY 緩衝確認的起點
-        self._empty_started_at = None
+        self.lock = RLock()
 
-        self.fast_exit_threshold = timedelta(seconds=1)
-        self.static_threshold = timedelta(seconds=5)
-        self.empty_grace_period = timedelta(milliseconds=500)
+    def update(self, someone: bool, motion: bool):
+        with self.lock:
+            # 無效資料，忽略
+            if not someone and motion:
+                return
 
-        self._static_alert_sent = False
-        self._alerts = deque()
-        self._lock = threading.Lock()
+            if someone and motion:
+                new_state = State.MOVE
+            elif someone:
+                new_state = State.STATIC
+            else:
+                new_state = State.EMPTY
 
-    @property
-    def status(self):
-        with self._lock:
-            return self._status
+            # empty -> static 視為雜訊
+            if self.state == State.EMPTY and new_state == State.STATIC:
+                return
 
-    def update(
-        self,
-        someone: bool,
-        motion: bool,
-        timestamp: datetime
-    ):
-        """由 ESP32 API 更新狀態，回傳狀態是否改變。"""
+            # 狀態沒有改變，不更新時間
+            if new_state == self.state:
+                return
 
-        if not someone and motion:
-            return False
+            now = datetime.now()
+            old_state = self.state
 
-        if not someone:
-            new_state = ToiletState.EMPTY
-        elif motion:
-            new_state = ToiletState.MOVE
-        else:
-            new_state = ToiletState.STATIC
-
-        with self._lock:
-            old_state = self._status
-
-            # ---------- EMPTY 緩衝確認 ----------
-            if new_state == ToiletState.EMPTY:
-
-                # 原本就已經是 EMPTY
-                if old_state == ToiletState.EMPTY:
-                    return False
-
-                # 第一次收到 EMPTY，開始緩衝計時
-                if self._empty_started_at is None:
-                    self._empty_started_at = timestamp
-
-                    # 離開 STATIC 前檢查 LONG_STATIC
-                    if old_state == ToiletState.STATIC:
-                        self._check_static_timeout(timestamp)
-
-                    return False
-
-                # EMPTY 尚未持續達到緩衝時間
-                if (timestamp - self._empty_started_at
-                        < self.empty_grace_period):
-                    return False
-
-                # EMPTY 已確認
-                # FAST_EXIT 使用第一次收到 EMPTY 的時間
+            if new_state == State.EMPTY:
                 if (
-                    self._last_static_at is not None
-                    and timedelta(0)
-                    <= self._empty_started_at - self._last_static_at
-                    < self.fast_exit_threshold
+                    self.from_static
+                    and self.last_static is not None
+                    and (now - self.last_static).total_seconds() < 1
                 ):
-                    self._alerts.append(ToiletAlert.FAST_EXIT)
+                    self.FAST_EMPTY = True
 
-                self._status = ToiletState.EMPTY
-                self._static_started_at = None
-                self._last_static_at = None
-                self._empty_started_at = None
-                self._static_alert_sent = False
+                self.from_static = False
 
-                return True
+            elif new_state == State.STATIC:
+                self.last_static = now
+                self.from_static = True
 
-            # ---------- 取消 EMPTY 緩衝 ----------
-            # 在確認時間內再次偵測到有人
-            if self._empty_started_at is not None:
-                self._empty_started_at = None
+            elif new_state == State.MOVE:
+                if old_state != State.STATIC:
+                    self.from_static = False
 
-            # ---------- 狀態沒有改變 ----------
-            if old_state == new_state:
-                if new_state == ToiletState.STATIC:
-                    self._check_static_timeout(timestamp)
-                return False
+            self.state = new_state
 
-            # 禁止 EMPTY -> STATIC
+    def check_long_static(self, seconds: float):
+        with self.lock:
             if (
-                old_state == ToiletState.EMPTY
-                and new_state == ToiletState.STATIC
+                self.state == State.STATIC
+                and self.last_static is not None
+                and (datetime.now() - self.last_static).total_seconds()
+                >= seconds
             ):
-                return False
+                self.LONG_STATIC = True
 
-            # 離開 STATIC 前檢查 LONG_STATIC
-            if old_state == ToiletState.STATIC:
-                self._check_static_timeout(timestamp)
+    def snapshot(self):
+        with self.lock:
+            return {
+                "state": self.state.value,
+                "fast_empty": self.FAST_EMPTY,
+                "long_static": self.LONG_STATIC,
+                "last_static": self.last_static,
+            }
 
-            # ---------- 更新狀態 ----------
-            self._status = new_state
-
-            if new_state == ToiletState.STATIC:
-
-                # 每次進入 STATIC，重新計算 LONG_STATIC
-                self._static_started_at = timestamp
-                self._static_alert_sent = False
-
-                # 更新最近一次 STATIC，供 FAST_EXIT 使用
-                self._last_static_at = timestamp
-
-            elif new_state == ToiletState.MOVE:
-
-                # 中斷 LONG_STATIC
-                # 但保留 FAST_EXIT 的時間基準
-                self._static_started_at = None
-                self._static_alert_sent = False
-
-            return True
-
-    def _check_static_timeout(self, now: datetime):
-        """檢查是否連續 STATIC 超過門檻。"""
-
-        if (
-            self._status == ToiletState.STATIC
-            and self._static_started_at is not None
-            and not self._static_alert_sent
-            and now - self._static_started_at
-            > self.static_threshold
-        ):
-            self._alerts.append(ToiletAlert.LONG_STATIC)
-            self._static_alert_sent = True
-
-    def get_alerts(self):
-        """取得並清空尚未處理的警告。"""
-
-        with self._lock:
-            alerts = list(self._alerts)
-            self._alerts.clear()
-            return alerts
+    def reset_warnings(self):
+        with self.lock:
+            self.FAST_EMPTY = False
+            self.LONG_STATIC = False

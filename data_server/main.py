@@ -39,7 +39,7 @@ from linebot.v3.webhooks import (
 print("import 自訂模組...")
 import network_helper
 from roadtrace.tracer import PathTracer
-from toiletbox.toilet_status import ToiletStateMachine, ToiletAlert
+from toiletbox.toilet_status import ToiletStateMachine
 print("import 完成")
 
 load_dotenv()
@@ -87,6 +87,16 @@ poo_type_map = {
     3: "poo-blood-wet",
     4: "poo-white",
     5: "poo-normal",
+}
+
+csi_state = {
+    "someone": False,
+    "motion": False,
+    "state": "",
+    "timestamp": "",
+    "fast_empty": False,
+    "long_static": False,
+    "last_static": datetime.now()
 }
 
 print("正在載入 YOLO 模型 ...")
@@ -206,14 +216,6 @@ def get_best_path():
     print(f"請求 {police_area} 區域警車支援，最佳路徑: {best_path}")
     return best_path, 200
     
-
-@app.route("/esp32/plate-debug", methods=["GET"])
-def plate_debug():
-    device_id = request.headers.get("X-Device-ID", "Device-A")
-    with open("./test.jpg", "rb") as f:
-        img_bytes = f.read()
-    road_tracer.trace_plate(device_id, img_bytes)
-    return "ok"
 
 @app.post("/webhook")
 def webhook():
@@ -478,6 +480,19 @@ def urgent_call():
 
     return jsonify({"status": "success"}), 200
 
+@app.route("/csi", methods=["GET"])
+def csi_index():
+    return render_template("csi-display.html")
+
+@app.route("/csi-reset", methods=["GET"])
+def csi_reset():
+    state_machine.reset_warnings()
+    return "ok"
+
+@app.route("/esp32/csi-state", methods=["GET"])
+def get_csi_state():
+    return csi_state.copy()
+
 @app.route("/esp32/csi-radar", methods=["POST"])
 def receive_csi_radar():
     data = request.get_json()
@@ -488,33 +503,29 @@ def receive_csi_radar():
             "message": "No JSON data received"
         }), 400
 
+    timestamp = datetime.now()
     someone = data.get("someone")
     motion = data.get("motion")
-    iso_time = data.get("timestamp")
+    print(f"CSI received: someone: {someone}    motion:{motion}    time: {timestamp}")
 
-    # print(f"CSI detected: someone: {someone}    motion:{motion}    timestamp: {timestamp}")
-    timestamp = datetime.fromisoformat(iso_time)
-    state_machine.update(someone, motion, timestamp)
-    print("CSI state: ", state_machine.status)
+    csi_state["someone"] = someone
+    csi_state["motion"] = motion
+    csi_state["timestamp"] = timestamp
+    state_machine.update(someone, motion)
 
     return jsonify({
         "success": True,
         "message": "Motion event received"
     }), 200
 
-def alert_worker():
+def csi_monitor():
     while True:
-        alerts = state_machine.get_alerts()
-
-        for alert in alerts:
-            if alert == ToiletAlert.FAST_EXIT:
-                # global debug_count
-                # debug_count += 1
-                print(f"[ALERT] \n\n\n FAST_EXIT {debug_count} \n\n\n")
-
-            elif alert == ToiletAlert.LONG_STATIC:
-                print("[ALERT] ======== LONG_STATIC ===========")
-
+        state_machine.check_long_static(seconds=5)
+        snapshot = state_machine.snapshot()
+        csi_state["state"] = snapshot["state"]
+        csi_state["fast_empty"] = snapshot["fast_empty"]
+        csi_state["long_static"] = snapshot["long_static"]
+        csi_state["last_static"] = snapshot["last_static"]
         time.sleep(0.2)
 
 if __name__ == "__main__":
@@ -530,7 +541,7 @@ if __name__ == "__main__":
     flask_thread.start()
     
     alert_thread = threading.Thread(
-        target=alert_worker,
+        target=csi_monitor,
         daemon=True
     )
     alert_thread.start()
