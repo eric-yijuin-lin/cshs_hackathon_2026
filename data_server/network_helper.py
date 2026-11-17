@@ -13,8 +13,7 @@ PURPOSE_API = {
     "audio_ars": [f"{API_ROOT}/audio-ars"],
     "audio_tts": [f"{API_ROOT}/audio-tts"],
     "auto_car": [
-        f"{API_ROOT}/target-gps",
-        f"{API_ROOT}/shortest-path",
+        f"{API_ROOT}/best-path",
     ],
     "sound_snapshot": [
         f"{API_ROOT}/sound-snapshot",

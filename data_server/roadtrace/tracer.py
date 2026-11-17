@@ -31,6 +31,9 @@ class PathTracer:
 
             self.plate_manager.upsert_plate_location(plate_number, position, area)
             self.plate_manager.update_violation(plate_number, violation)
+
+            if(self.plate_manager.is_fake_plate(plate_number)):
+                self.plate_manager.update_violation(plate_number, "偽造車牌")
             self.plate_manager.save_violation_image(plate_number, yolo_results)
     
     def set_best_path(self, police_area: str, trigger_device: str) -> None:
