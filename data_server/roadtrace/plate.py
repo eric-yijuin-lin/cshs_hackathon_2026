@@ -17,6 +17,11 @@ class CarPlateManager:
             "PLZ", #(PLZ拜託please縮寫)
             "PPL", #(PPL人們people縮寫)；
         ]
+        self.wanted_plates = [
+            "SQL-666",
+            "GPU-128",
+            "AFK-987"
+        ]
 
         self.ocr = RapidOCR()
         self.plate_db = {
@@ -99,14 +104,18 @@ class CarPlateManager:
             return None
         return results
 
-    def update_violation(self, plate_number: str, violation: str) -> None:
+    def update_violation(self, 
+                         plate_number: str, 
+                         sound_db: float, 
+                         is_fake: bool, 
+                         is_wanted: bool) -> None:
         record = self.plate_db[plate_number]
 
-        if "分貝" in violation:
-            record["violations"]["改管噪音"].append(violation)
-        elif "偽造" in violation:
+        if sound_db:
+            record["violations"]["改管噪音"].append(f"{sound_db} 分貝")
+        if is_fake:
             record["violations"]["偽造車牌"] = True
-        elif "通緝" in violation:
+        if is_wanted:
             record["violations"]["通緝車輛"] = True
 
     def save_violation_image(self, plate_number: str, yolo_results) -> None:
@@ -137,4 +146,9 @@ class CarPlateManager:
         for word in self.invalid_words:
             if word in plate_number:
                 return True
+        return False
+
+    def is_wanted_plate(self, plate_number: str) -> bool:
+        if plate_number in self.wanted_plates:
+            return True
         return False
