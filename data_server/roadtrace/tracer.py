@@ -7,7 +7,7 @@ class PathTracer:
         self.path_manager = RoadPathManager()
         self.best_paths = {}
 
-    def trace_plate(self, device_id: str, violation: str, img_bytes: list):
+    def trace_plate(self, device_id: str, sound_db: float, img_bytes: list):
         area = self.path_manager.get_device_area(device_id)
         if not area:
             raise ValueError(f"找不到對應的區域，device_id = {device_id}")
@@ -30,7 +30,9 @@ class PathTracer:
             print(f"偵測到車牌: {plate_number}, 分數: {score}, 位置: {position}, 區域: {area}")
 
             self.plate_manager.upsert_plate_location(plate_number, position, area)
-            self.plate_manager.update_violation(plate_number, violation)
+            is_fake = self.plate_manager.is_fake_plate(plate_number)
+            is_wanted = self.plate_manager.is_wanted_plate(plate_number)
+            self.plate_manager.update_violation(plate_number, sound_db, is_fake, is_wanted)
             self.plate_manager.save_violation_image(plate_number, yolo_results)
     
     def set_best_path(self, police_area: str, trigger_device: str) -> None:

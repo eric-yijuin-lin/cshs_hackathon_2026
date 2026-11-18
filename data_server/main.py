@@ -197,10 +197,9 @@ def sound_snapshot():
     print(f"偵測到聲音快照，裝置ID: {device_id}, 聲音分貝: {sound_level}, 資料大小: {len(byte_data)} bytes")
 
     try:
-        violation = f"{sound_level} 分貝"
-        road_tracer.trace_plate(device_id, violation, byte_data)
+        road_tracer.trace_plate(device_id, sound_level, byte_data)
 
-        police_area = "G" # 真正應用要搜尋最近警車，但先假設警車都在 A 區
+        police_area = "G" # 真正應用要搜尋最近警車，但先假設警車都在 G 區
         road_tracer.set_best_path(police_area, device_id)
         best_path = road_tracer.get_best_path(police_area) # debug use
         print(f"(儲存最佳路徑) 警車區域: {police_area}    最佳路徑: {best_path}")
@@ -215,7 +214,7 @@ def get_best_path():
     best_path = road_tracer.get_best_path(police_area)
     print(f"請求 {police_area} 區域警車支援，最佳路徑: {best_path}")
     return best_path, 200
-    
+
 
 @app.post("/webhook")
 def webhook():

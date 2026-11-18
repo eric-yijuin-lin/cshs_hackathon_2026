@@ -9,6 +9,20 @@ class CarPlateManager:
         self.yolo = YOLO(model_path)
         print("CarPlateManager 初始化完成")
 
+        self.invalid_chars = ['I', 'O', '4']
+        self.invalid_words = [
+            "CGY", #(GY不雅諧音),
+            "CKD", #(慢性腎臟病)；普通重型機車之
+            "PLA", #(PLA中國人民解放軍縮寫),
+            "PLZ", #(PLZ拜託please縮寫)
+            "PPL", #(PPL人們people縮寫)；
+        ]
+        self.wanted_plates = [
+            "SQL-666",
+            "GPU-128",
+            "AFK-987"
+        ]
+
         self.ocr = RapidOCR()
         self.plate_db = {
             "ABC-123": {
@@ -90,15 +104,19 @@ class CarPlateManager:
             return None
         return results
 
-    def update_violation(self, plate_number: str, violation: str) -> None:
+    def update_violation(self, 
+                         plate_number: str, 
+                         sound_db: float, 
+                         is_fake: bool, 
+                         is_wanted: bool) -> None:
         record = self.plate_db[plate_number]
 
-        if "分貝" in violation:
-            record["violations"]["改管噪音"].append(violation)
-        elif "偽造" in violation:
-            record["violations"]["偽造"] = True
-        elif "通緝" in violation:
-            record["violations"]["wanted"] = True
+        if sound_db:
+            record["violations"]["改管噪音"].append(f"{sound_db} 分貝")
+        if is_fake:
+            record["violations"]["偽造車牌"] = True
+        if is_wanted:
+            record["violations"]["通緝車輛"] = True
 
     def save_violation_image(self, plate_number: str, yolo_results) -> None:
         annotated_image = yolo_results[0].plot()
@@ -121,3 +139,16 @@ class CarPlateManager:
                 text_y += 30
             
         cv2.imwrite(f"./data_server/roadtrace/violation_images/{plate_number}.jpg", annotated_image)
+
+    def is_fake_plate(self, plate_number: str) -> bool:
+        if any(k in plate_number for k in self.invalid_chars):
+            return True
+        for word in self.invalid_words:
+            if word in plate_number:
+                return True
+        return False
+
+    def is_wanted_plate(self, plate_number: str) -> bool:
+        if plate_number in self.wanted_plates:
+            return True
+        return False
