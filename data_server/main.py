@@ -174,6 +174,13 @@ def sound_snapshot():
         road_tracer.set_best_path(police_area, device_id)
         best_path = road_tracer.get_best_path(police_area) # debug use
         print(f"(儲存最佳路徑) 警車區域: {police_area}    最佳路徑: {best_path}")
+
+        alert_message = f"裝置 {device_id} 偵測到改管車輛，噪音分貝 {sound_level} dB。\n\n"
+        alert_message += f"請求最近區域 {police_area} 的警車前往查緝，最佳路徑：\n"
+        for node in best_path:
+            alert_message += str(node)
+        line_helper.alert_police(alert_message)
+
         return "ok", 200
     except Exception as e:
         print("Error:", e)

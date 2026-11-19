@@ -38,11 +38,12 @@ class LineMessageHelper:
             os.environ["LINE_CHANNEL_SECRET"]
         )
 
+        self.group_id = os.environ["LINE_DEBUG_GROUP_ID"]
         self.car_model = car_yolo_model
         self.poo_model = poo_yolo_model
         self.user_modes = {}
         self.last_notify = datetime.now()
-        self.tag_id_map = {
+        self.mention_id_map = {
             "police": os.environ["TAG_POLICE_ID"],
             "doctor": os.environ["TAG_DOCTOR_ID"],
             "villige_chief": os.environ["TAG_VILLAGE_CHIEF_ID"],
@@ -241,11 +242,10 @@ class LineMessageHelper:
     def notify(self):
         if datetime.now() - self.last_notify < timedelta(seconds=NOTIFY_COLDOWN):
             raise RuntimeError("為防止 LINE push 額度耗盡，主動觸發 Exception")
-            
-        group_id = os.environ["LINE_DEBUG_GROUP_ID"]
+
         text_template = ""
         substitutions = {}
-        for role, tag_id in self.tag_id_map.items():
+        for role, tag_id in self.mention_id_map.items():
             text_template += f"{{{role}}}這是給{role}的訊息\n"
             substitutions[role] = MentionSubstitutionObject(
                 mentionee=UserMentionTarget(
@@ -265,9 +265,52 @@ class LineMessageHelper:
 
             line_bot_api.push_message(
                 PushMessageRequest(
-                    to=group_id,
+                    to=self.group_id,
                     messages=[message]
                 )
             )
 
         self.last_notify = datetime.now()
+
+    def alert_police(self, text_message: str) -> None:
+        user_id = self.mention_id_map["police"]
+        print("original text", text_message)
+        
+        replacements = {
+            "'": "",
+            "{": "",
+            "}": "",
+            ", ": " ",
+            "start": "\n從結點",
+            "end": "到結點",
+            "weight": "路程",
+            "direction": "角度",
+            ": ": " "
+        }
+        
+        for old, new in replacements.items():
+            text_message = text_message.replace(old, new)
+        text_template = "{police}\n" + text_message
+
+        print(text_template)
+
+        with ApiClient(self.configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+
+            message = TextMessageV2(
+                text=text_template,
+                substitution={
+                    "police": MentionSubstitutionObject(
+                        mentionee=UserMentionTarget(
+                            user_id=user_id
+                        )
+                    )
+                }
+            )
+
+            line_bot_api.push_message(
+                PushMessageRequest(
+                    to=self.group_id,
+                    messages=[message]
+                )
+            )
