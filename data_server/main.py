@@ -4,7 +4,7 @@ import os
 import threading
 import queue
 import time
-from pathlib import Path
+import traceback
 
 print("import Flask 模組...")
 from flask import Flask, jsonify, request, render_template, abort, send_file
@@ -16,25 +16,8 @@ from dotenv import load_dotenv
 from ultralytics import YOLO
 
 print("import LINE Messaging API 模組...")
-from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import (
-    Configuration,
-    ApiClient,
-    MessagingApi,
-    ReplyMessageRequest,
-    TextMessage,
-    TextMessageV2,
-    PushMessageRequest,
-    MentionSubstitutionObject,
-    UserMentionTarget,
-)
-from linebot.v3.webhooks import MessageEvent, TextMessageContent
-from linebot.v3.messaging import MessagingApiBlob
-from linebot.v3.webhooks import (
-    ImageMessageContent,
-    AudioMessageContent,
-)
+from line.linehelper import LineMessageHelper
 
 print("import 自訂模組...")
 import network_helper
@@ -47,22 +30,15 @@ debug_count = 0
 
 app = Flask(__name__)
 
-configuration = Configuration(
-    access_token=os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
-)
-
-handler = WebhookHandler(
-    os.environ["LINE_CHANNEL_SECRET"]
-)
+print("正在載入 LINE 使用的 YOLO 模型 ...")
+car_model = YOLO("./ai/best_models/車牌m(115_11_3)150次.pt")
+poo_model = YOLO("./ai/best_models/(2026_11_9)便便s150次.pt")
+print("載入完畢")
 
 image_queue = queue.Queue(maxsize=2)
 road_tracer = PathTracer("./ai/best_models/車牌m(115_11_3)150次.pt")
-
+line_helper = LineMessageHelper(car_model, poo_model)
 state_machine = ToiletStateMachine()
-
-
-MODES = {"car", "poo", "mention", "upload", "agent", "debug"}
-user_modes = {}
 
 audio_files = [
     "button-press",
@@ -98,11 +74,6 @@ csi_state = {
     "long_static": False,
     "last_static": datetime.now()
 }
-
-print("正在載入 YOLO 模型 ...")
-car_model = YOLO("./ai/yolo/YOLO26s.pt")
-poo_model = YOLO("./ai/best_models/(2026_11_9)便便s150次.pt")
-print("載入完畢")
 
 def display_images(detect_objects: bool):
     print("正在載入 queue 使用的 YOLO...")
@@ -222,186 +193,20 @@ def webhook():
     signature = request.headers.get("X-Line-Signature", "")
 
     try:
-        handler.handle(body, signature)
+        line_helper.handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
+    except Exception:
+        traceback.print_exc()
+        return "Internal Server Error", 500
 
     return "OK", 200
 
-@handler.add(MessageEvent, message=TextMessageContent)
-def handle_text_message(event):
-    user_id = event.source.user_id
-    user_text = event.message.text
-
-    print(f"收到 LINE 訊息：{user_text}")
-
-    # 判斷是否為指令
-    if user_text.startswith(("/", "／")):
-        command = user_text[1:].strip().lower()
-
-        if command in MODES:
-            user_modes[user_id] = command
-            reply_text = f"已切換至 {command} 模式"
-
-            if command == "debug":
-                print(event)
-        else:
-            reply_text = f"未知指令：{command}"
-    else:
-        reply_text = f"Flask 收到：{user_text}"
-
-    # 回覆 LINE 訊息
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[
-                    TextMessage(text=reply_text)
-                ],
-            )
-        )
-
-@handler.add(MessageEvent, message=ImageMessageContent)
-def handle_image_message(event):
-    user_id = event.source.user_id
-    message_id = event.message.id
-
-    # 從 LINE 下載圖片
-    with ApiClient(configuration) as api_client:
-        blob_api = MessagingApiBlob(api_client)
-        image_data = blob_api.get_message_content(message_id)
-
-    reply_text = "正在處理圖片"
-    mode = user_modes[user_id]
-    match mode:
-        case "upload": 
-            # 建立儲存資料夾
-            upload_dir = Path("uploads")
-            upload_dir.mkdir(exist_ok=True)
-
-            # 儲存圖片
-            image_path = upload_dir / f"{message_id}.jpg"
-            image_path.write_bytes(image_data)
-
-            print(f"圖片已儲存：{image_path}")
-            reply_text = "圖片已儲存！"
-            message = TextMessage(text=reply_text)
-
-        case "car" | "poo":
-            # 2. Binary Data → NumPy Array → OpenCV Image
-            image_array = np.frombuffer(image_data, dtype=np.uint8)
-            image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
-
-            # 3. 執行 YOLO
-            if image is not None:
-                if mode == "car":
-                    results = car_model.predict(image, verbose=False)
-                else:
-                    results = poo_model.predict(image, verbose=False)
-
-                result = results[0]
-                if len(result.boxes) > 0:
-                    detections = []
-
-                    for box in result.boxes:
-                        class_id = int(box.cls[0])
-                        class_name = result.names[class_id]
-                        x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-
-                        detections.append(
-                            f"{class_name}: ({x1}, {y1}, {x2}, {y2})"
-                        )
-
-                    reply_text = "\n".join(detections)
-
-                else:
-                    reply_text = "未偵測到任何物件"
-                    message = TextMessage(text=reply_text)
-
-        case "mention":
-             print("[debug] 進入 mention")
-             print(f"[debug] source type: {event.source.type};  user id: {user_id}")
-             if event.source.type == "group" and user_id:
-                message = TextMessageV2(
-                    text="{user}\nFlask 收到 @ 測試：",
-                    substitution={
-                        "user": MentionSubstitutionObject(
-                            mentionee=UserMentionTarget(user_id=user_id)
-                        )
-                    }
-                )
-
-        case _:
-            reply_text = "圖片只支援 yolo, car 或 poo 模式"
-            message = TextMessage(text=reply_text)
-                    
-
-    # 回覆使用者
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[
-                    message
-                ],
-            )
-        )
-
-@handler.add(MessageEvent, message=AudioMessageContent)
-def handle_audio_message(event):
-    message_id = event.message.id
-    duration = event.message.duration
-
-    # 從 LINE 下載音訊
-    with ApiClient(configuration) as api_client:
-        blob_api = MessagingApiBlob(api_client)
-        audio_data = blob_api.get_message_content(message_id)
-
-    # 建立儲存資料夾
-    upload_dir = Path("uploads")
-    upload_dir.mkdir(exist_ok=True)
-
-    # 儲存音訊
-    audio_path = upload_dir / f"{message_id}.m4a"
-    audio_path.write_bytes(audio_data)
-
-    print(f"語音已儲存：{audio_path}")
-    print(f"語音長度：{duration} ms")
-
-    # 回覆使用者
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[
-                    TextMessage(text="語音已儲存！")
-                ],
-            )
-        )
 
 @app.get("/notify")
 def notify():
-    user_id = os.environ["LINE_DEBUG_USER_ID"]
-
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-
-        line_bot_api.push_message(
-            PushMessageRequest(
-                to=user_id,
-                messages=[
-                    TextMessage(text="這是 Flask 主動推送的測試訊息！")
-                ],
-            )
-        )
-
-    return {"status": "sent"}
+    line_helper.notify()
+    return jsonify({"status": "success"}), 200
 
 @app.route("/esp32/audio-count", methods=["GET"])
 def audio_count():
@@ -445,37 +250,7 @@ def urgent_call():
     group_id = os.environ["LINE_DEBUG_GROUP_ID"]
     text = f"🚨廁所裝置 {device_id} 發出緊急呼叫！\n\n{{family}} 請立刻致電關心！\n\n {{hospital}} 請立刻派人到 {address}"
 
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        message = TextMessageV2(
-            text=text,
-            substitution={
-                "family": MentionSubstitutionObject(
-                    mentionee=UserMentionTarget(
-                        user_id=user_id
-                    )
-                ),
-                "hospital": MentionSubstitutionObject(
-                    mentionee=UserMentionTarget(
-                        user_id=user_id
-                    )
-                )
-            }
-    )
-
-    try:
-        with ApiClient(configuration) as api_client:
-            line_bot_api = MessagingApi(api_client)
-
-            line_bot_api.push_message(
-                PushMessageRequest(
-                    to=group_id,
-                    messages=[message]
-                )
-            )
-    except Exception:
-        app.logger.exception("LINE push failed")
-        return jsonify({"status": "error"}), 502
+    line_helper.notify()
 
     return jsonify({"status": "success"}), 200
 
