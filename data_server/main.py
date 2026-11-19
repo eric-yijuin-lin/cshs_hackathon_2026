@@ -16,25 +16,8 @@ from dotenv import load_dotenv
 from ultralytics import YOLO
 
 print("import LINE Messaging API 模組...")
-from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import (
-    Configuration,
-    ApiClient,
-    MessagingApi,
-    ReplyMessageRequest,
-    TextMessage,
-    TextMessageV2,
-    PushMessageRequest,
-    MentionSubstitutionObject,
-    UserMentionTarget,
-)
-from linebot.v3.webhooks import MessageEvent, TextMessageContent
-from linebot.v3.messaging import MessagingApiBlob
-from linebot.v3.webhooks import (
-    ImageMessageContent,
-    AudioMessageContent,
-)
+from linemsg.msghelper import LineMessageHelper
 
 print("import 自訂模組...")
 import network_helper
@@ -47,17 +30,10 @@ debug_count = 0
 
 app = Flask(__name__)
 
-configuration = Configuration(
-    access_token=os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
-)
-
-handler = WebhookHandler(
-    os.environ["LINE_CHANNEL_SECRET"]
-)
 
 image_queue = queue.Queue(maxsize=2)
 road_tracer = PathTracer("./ai/best_models/車牌m(115_11_3)150次.pt")
-
+line_helper = LineMessageHelper()
 state_machine = ToiletStateMachine()
 
 
@@ -99,13 +75,6 @@ csi_state = {
     "last_static": datetime.now()
 }
 
-tag_id_map = {
-    "police": os.environ["TAG_POLICE_ID"],
-    "doctor": os.environ["TAG_DOCTOR_ID"],
-    "villige_chief": os.environ["TAG_VILLAGE_CHIEF_ID"],
-    "family": os.environ["TAG_FAMILY_ID"],
-    "social_worker": os.environ["TAG_SOCIAL_WORKER_ID"],
-}
 
 print("正在載入 YOLO 模型 ...")
 car_model = YOLO("./ai/yolo/YOLO26s.pt")
@@ -230,47 +199,14 @@ def webhook():
     signature = request.headers.get("X-Line-Signature", "")
 
     try:
-        handler.handle(body, signature)
+        line_helper.handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
 
     return "OK", 200
 
 @handler.add(MessageEvent, message=TextMessageContent)
-def handle_text_message(event):
-    user_id = event.source.user_id
-    user_text = event.message.text
 
-    print(f"收到 LINE 訊息：{user_text}")
-
-    # 判斷是否為指令
-    if user_text.startswith(("/", "／")):
-        command = user_text[1:].strip().lower()
-
-        if command == "debug":
-            print(event)
-        elif command == "id":
-            reply_text = user_id
-        elif command in MODES:
-            user_modes[user_id] = command
-            reply_text = f"已切換至 {command} 模式"
-        else:
-            reply_text = f"未知指令：{command}"
-    else:
-        reply_text = f"Flask 收到：{user_text}"
-
-    # 回覆 LINE 訊息
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[
-                    TextMessage(text=reply_text)
-                ],
-            )
-        )
 
 @handler.add(MessageEvent, message=ImageMessageContent)
 def handle_image_message(event):
