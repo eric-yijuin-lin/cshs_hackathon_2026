@@ -99,6 +99,14 @@ csi_state = {
     "last_static": datetime.now()
 }
 
+tag_id_map = {
+    "police": os.environ["TAG_POLICE_ID"],
+    "doctor": os.environ["TAG_DOCTOR_ID"],
+    "villige_chief": os.environ["TAG_VILLAGE_CHIEF_ID"],
+    "family": os.environ["TAG_FAMILY_ID"],
+    "social_worker": os.environ["TAG_SOCIAL_WORKER_ID"],
+}
+
 print("正在載入 YOLO 模型 ...")
 car_model = YOLO("./ai/yolo/YOLO26s.pt")
 poo_model = YOLO("./ai/best_models/(2026_11_9)便便s150次.pt")
@@ -239,12 +247,13 @@ def handle_text_message(event):
     if user_text.startswith(("/", "／")):
         command = user_text[1:].strip().lower()
 
-        if command in MODES:
+        if command == "debug":
+            print(event)
+        elif command == "id":
+            reply_text = user_id
+        elif command in MODES:
             user_modes[user_id] = command
             reply_text = f"已切換至 {command} 模式"
-
-            if command == "debug":
-                print(event)
         else:
             reply_text = f"未知指令：{command}"
     else:
@@ -387,21 +396,39 @@ def handle_audio_message(event):
 
 @app.get("/notify")
 def notify():
-    user_id = os.environ["LINE_DEBUG_USER_ID"]
-
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-
-        line_bot_api.push_message(
-            PushMessageRequest(
-                to=user_id,
-                messages=[
-                    TextMessage(text="這是 Flask 主動推送的測試訊息！")
-                ],
+    group_id = os.environ["LINE_DEBUG_GROUP_ID"]
+    text_template = ""
+    substitutions = {}
+    for role, tag_id in tag_id_map.items():
+        text_template += f"{{{role}}}這是給{role}的訊息\n"
+        substitutions[role] = MentionSubstitutionObject(
+            mentionee=UserMentionTarget(
+                user_id=tag_id
             )
         )
 
-    return {"status": "sent"}
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        message = TextMessageV2(
+            text=text_template,
+            substitution=substitutions
+        )
+
+    try:
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+
+            line_bot_api.push_message(
+                PushMessageRequest(
+                    to=group_id,
+                    messages=[message]
+                )
+            )
+    except Exception:
+        app.logger.exception("LINE push failed")
+        return jsonify({"status": "error"}), 502
+
+    return jsonify({"status": "success"}), 200
 
 @app.route("/esp32/audio-count", methods=["GET"])
 def audio_count():
