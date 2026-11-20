@@ -288,6 +288,7 @@ def receive_csi_radar():
     csi_state["someone"] = someone
     csi_state["motion"] = motion
     csi_state["timestamp"] = timestamp
+    print(state_machine.state)
     state_machine.update(someone, motion)
 
     return jsonify({
