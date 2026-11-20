@@ -11,7 +11,7 @@ const int SERVO_PIN = 18;
 const int PWM_FREQ = 20000;
 const int PWM_RES = 8;
 
-String policeArea = "G";
+String policeArea = "A";
 
 Servo myServo;
 
@@ -202,12 +202,12 @@ void autoDrive() {
         turnDirection(node.direction);
         // setMotorSpeed(80);
         Serial.printf("Turn direction finished, go strait for %d ms.\n", node.weight * 500);
-        delay(node.weight * 500); // 目前以 0.5 秒為單位
+        delay(node.weight * 800); // 目前以 0.6 秒為單位
     }
 }
 
 void turnDirection(float origDegree) {
-    int delayMs = (int)4000/90 * origDegree; // 以 4 秒轉 90 度測試 (1 度 2 ms)
+    int delayMs = (int)3000/90 * origDegree; // 以 3 秒轉 90 度測試 (1 度 2 ms)
     if (origDegree == 0) {
         return;
     }

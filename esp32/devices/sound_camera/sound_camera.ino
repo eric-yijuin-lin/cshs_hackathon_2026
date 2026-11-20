@@ -23,9 +23,11 @@ Bounce button = Bounce();
 int areaButtonState = HIGH;
 int device_index = 3; // 
 String devicePrefix = "Device-";
-String deviceID = "Device-D";
+String deviceID = "Device-E";
 
 NetworkConfig networkConfig;
+
+String deviceList[] = { "B", "C", "D", "E", "F", "H", "M", "J" };
 
 SoundLevel sound(
   42, // SCK
@@ -125,7 +127,7 @@ void switchArea() {
     device_index++;
     device_index = (device_index % 8);
     Serial.printf("to %d", device_index);
-    deviceID = devicePrefix + char(device_index + 65);
+    deviceID = devicePrefix + deviceList[device_index];
 }
 
 bool captureAndSendImage(NetworkConfig config, double soundLevel) {

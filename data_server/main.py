@@ -170,7 +170,7 @@ def sound_snapshot():
     try:
         road_tracer.trace_plate(device_id, sound_level, byte_data)
 
-        police_area = "G" # 真正應用要搜尋最近警車，但先假設警車都在 G 區
+        police_area = "A" # 真正應用要搜尋最近警車，但先假設警車都在 G 區
         road_tracer.set_best_path(police_area, device_id)
         best_path = road_tracer.get_best_path(police_area) # debug use
         print(f"(儲存最佳路徑) 警車區域: {police_area}    最佳路徑: {best_path}")

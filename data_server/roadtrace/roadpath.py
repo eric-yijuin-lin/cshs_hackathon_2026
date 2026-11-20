@@ -22,11 +22,16 @@ class RoadPathManager:
             'Device-F': 'F',
             'Device-G': 'G',
             'Device-H': 'H',
+            'Device-I': 'I',
+            'Device-J': 'J',
+            'Device-K': 'K',
+            'Device-L': 'L',
+            'Device-M': 'M',
         }
         
     def load_source(self) -> None:
         module_dir = Path(__file__).resolve().parent
-        source_file = module_dir / "sample_graph.json"
+        source_file = module_dir / "graph-2.json"
         with open(source_file, 'r', encoding="UTF-8") as f:
             self.source_json = json.load(f)
 
