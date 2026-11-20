@@ -27,6 +27,22 @@ from linebot.v3.webhooks import (
 MODES = {"car", "poo", "mention", "upload", "agent", "debug"}
 NOTIFY_COLDOWN = 3
 
+poo_type_zh_dict = {
+    "poo-wet": "拉肚子",
+    "poo-blood-dry": "血便（乾）",
+    "poo-blood-wet": "血便（水狀）",
+    "poo-green": "綠便",
+    "poo-white": "白便",
+}
+
+poo_type_suggestions = {
+    "poo-wet": "請多注意家人飲食，盡量吃新鮮的食物",
+    "poo-blood-dry": "請持續留意是否經常發生，如果經常發生請帶家人就醫檢查",
+    "poo-blood-wet": "建議盡快帶家人就醫檢查",
+    "poo-green": "請留意有沒有其他腸胃感染的現象，如果持續發生請盡速就醫",
+    "poo-white": "如有定期在服藥，請告知醫生有排出白便，詢問是否需要換藥。如果沒有定期服藥，請留意肝臟是否需要近一步檢查",
+}
+
 
 class LineMessageHelper:
     def __init__(self, car_yolo_model, poo_yolo_model):
@@ -43,12 +59,17 @@ class LineMessageHelper:
         self.poo_model = poo_yolo_model
         self.user_modes = {}
         self.last_notify = datetime.now()
+
         self.mention_id_map = {
             "police": os.environ["TAG_POLICE_ID"],
             "doctor": os.environ["TAG_DOCTOR_ID"],
             "villige_chief": os.environ["TAG_VILLAGE_CHIEF_ID"],
             "family": os.environ["TAG_FAMILY_ID"],
             "social_worker": os.environ["TAG_SOCIAL_WORKER_ID"],
+        }
+
+        self.address_map = {
+            "toilet_1": "南投縣 OO 鎮 XX 路 123 號"
         }
 
         self._register_handlers()
@@ -272,9 +293,12 @@ class LineMessageHelper:
 
         self.last_notify = datetime.now()
 
+
     def alert_police(self, text_message: str) -> None:
+        if datetime.now() - self.last_notify < timedelta(seconds=NOTIFY_COLDOWN):
+            raise RuntimeError("為防止 LINE push 額度耗盡，主動觸發 Exception")
+        
         user_id = self.mention_id_map["police"]
-        print("original text", text_message)
         
         replacements = {
             "'": "",
@@ -290,9 +314,7 @@ class LineMessageHelper:
         
         for old, new in replacements.items():
             text_message = text_message.replace(old, new)
-        text_template = "{police}\n" + text_message
-
-        print(text_template)
+        text_template = "{police}\n\n" + text_message
 
         with ApiClient(self.configuration) as api_client:
             line_bot_api = MessagingApi(api_client)
@@ -314,3 +336,130 @@ class LineMessageHelper:
                     messages=[message]
                 )
             )
+            
+        self.last_notify = datetime.now()
+
+    def alert_urgencall(self, device_id) -> None:
+        if datetime.now() - self.last_notify < timedelta(seconds=NOTIFY_COLDOWN):
+            raise RuntimeError("為防止 LINE push 額度耗盡，主動觸發 Exception")
+        
+        address = self.address_map[device_id]
+        text_template = f"🚨廁所裝置 {device_id} 發出緊急呼叫！\n\n"
+        text_template += f"{{social_worker}} 請立刻致電關心！\n\n"
+        text_template += f"{{villige_chief}} 請立刻到 {address} 查看居民狀況 \n\n"
+        text_template += f"{{doctor}} 請與里長連絡，評估是否需要派派救護車到 {address}"
+
+        with ApiClient(self.configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+
+            message = TextMessageV2(
+                text=text_template,
+                substitution={
+                    "doctor": MentionSubstitutionObject(
+                        mentionee=UserMentionTarget(
+                            user_id=self.mention_id_map["doctor"]
+                        )
+                    ),
+                    "villige_chief": MentionSubstitutionObject(
+                        mentionee=UserMentionTarget(
+                            user_id=self.mention_id_map["villige_chief"]
+                        )
+                    ),
+                    "social_worker": MentionSubstitutionObject(
+                        mentionee=UserMentionTarget(
+                            user_id=self.mention_id_map["social_worker"]
+                        )
+                    ),
+                }
+            )
+
+            line_bot_api.push_message(
+                PushMessageRequest(
+                    to=self.group_id,
+                    messages=[message]
+                )
+            )
+            
+        self.last_notify = datetime.now()
+
+    def alert_csi_state(self, device_id, fast_empty: bool, long_static: bool) -> None:
+        if datetime.now() - self.last_notify < timedelta(seconds=NOTIFY_COLDOWN):
+            raise RuntimeError("為防止 LINE push 額度耗盡，主動觸發 Exception")
+        
+        address = self.address_map[device_id]
+        text_template = f"🚨廁所裝置 {device_id} 偵測到 CSI 狀態異常，"
+        if fast_empty:
+            text_template += "使用者疑似跌倒"
+        elif long_static:
+            text_template += "使用者已經長時間停留在廁所"
+        text_template += f"{{social_worker}} 請立刻致電關心！\n\n"
+        text_template += f"{{villige_chief}} 請立刻到 {address} 查看居民狀況 \n\n"
+        text_template += f"{{doctor}} 請與里長連絡，評估是否需要派派救護車到 {address}"
+
+        with ApiClient(self.configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+
+            message = TextMessageV2(
+                text=text_template,
+                substitution={
+                    "doctor": MentionSubstitutionObject(
+                        mentionee=UserMentionTarget(
+                            user_id=self.mention_id_map["doctor"]
+                        )
+                    ),
+                    "villige_chief": MentionSubstitutionObject(
+                        mentionee=UserMentionTarget(
+                            user_id=self.mention_id_map["villige_chief"]
+                        )
+                    ),
+                    "social_worker": MentionSubstitutionObject(
+                        mentionee=UserMentionTarget(
+                            user_id=self.mention_id_map["social_worker"]
+                        )
+                    ),
+                }
+            )
+
+            line_bot_api.push_message(
+                PushMessageRequest(
+                    to=self.group_id,
+                    messages=[message]
+                )
+            )
+
+        self.last_notify = datetime.now()
+
+    def alert_poo_type(self, device_id: str, poo_type: str) -> None:
+        if poo_type == "unknown":
+            print("無法辨識便便類型，不發出警報")
+            return
+        
+        type_zh = poo_type_zh_dict[poo_type]
+        suggestion = poo_type_suggestions[poo_type]
+        text_template = "{family}\n\n"
+        text_template += f"🚨廁所裝置 {device_id} 檢測到便便異常！\n\n"
+        text_template += f"檢測到的便便類型為：{type_zh}。{suggestion}\n\n"
+        text_template += "請持續關心家人的健康。"
+
+        with ApiClient(self.configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+
+            message = TextMessageV2(
+                text=text_template,
+                substitution={
+                    "family": MentionSubstitutionObject(
+                        mentionee=UserMentionTarget(
+                            user_id=self.mention_id_map["family"]
+                        )
+                    ),
+                }
+            )
+
+            line_bot_api.push_message(
+                PushMessageRequest(
+                    to=self.group_id,
+                    messages=[message]
+                )
+            )
+        
+        self.last_notify = datetime.now()

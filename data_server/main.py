@@ -243,21 +243,17 @@ def check_poo():
     
     class_id = int(result.boxes[0].cls[0]) if len(result.boxes) > 0 else -1
     class_name = result.names[class_id] if class_id != -1 else "未偵測到便便"
-    print(f"便便類型: {class_name} (class_id: {class_id})")
-    return poo_type_map[class_id], 200
+    poo_type = poo_type_map[class_id]
+    print(f"便便 class_id: {class_id},  class name: {class_name}, poo type: {poo_type}")
+    line_helper.alert_poo_type(device_id, poo_type)
+    return poo_type, 200
 
 @app.route("/esp32/urgent-call", methods=["GET"])
 def urgent_call():
     device_id = request.headers.get("X-Device-ID")
-    # device_id = "debug_1"
-    address = "測試地址"
     print(f"收到緊急呼叫, device_id: {device_id}")
-
-    user_id = os.environ["LINE_DEBUG_USER_ID"]
-    group_id = os.environ["LINE_DEBUG_GROUP_ID"]
-    text = f"🚨廁所裝置 {device_id} 發出緊急呼叫！\n\n{{family}} 請立刻致電關心！\n\n {{hospital}} 請立刻派人到 {address}"
-
-    line_helper.notify()
+    
+    line_helper.alert_urgencall(device_id)
 
     return jsonify({"status": "success"}), 200
 
@@ -300,6 +296,7 @@ def receive_csi_radar():
     }), 200
 
 def csi_monitor():
+    device_id = "toilet_1"
     while True:
         state_machine.check_long_static(seconds=5)
         snapshot = state_machine.snapshot()
@@ -307,6 +304,13 @@ def csi_monitor():
         csi_state["fast_empty"] = snapshot["fast_empty"]
         csi_state["long_static"] = snapshot["long_static"]
         csi_state["last_static"] = snapshot["last_static"]
+
+        if snapshot["fast_empty"]:
+            line_helper.alert_csi_state(device_id, snapshot["fast_empty"], snapshot["long_static"])
+            csi_state["fast_empty"] = False # 警告完畢重設狀態
+        elif snapshot["long_static"]:
+            line_helper.alert_csi_state(device_id, snapshot["fast_empty"], snapshot["long_static"])
+            csi_state["long_static"] = False # 警告完畢重設狀態
         time.sleep(0.2)
 
 if __name__ == "__main__":
